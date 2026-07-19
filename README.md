@@ -12,13 +12,15 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 |-------|------|
 | Feed | Configurable endpoint (default soccer bulk `idSuperSport=16&allEvents=true`) |
 | Tracking key | Tipsport `opp_id` (selection id) |
-| Drop baseline | Odds known at `now - tier.window` (closest sample at or before) |
+| Drop baseline | `window_seconds: 0` = previous poll; else odds at `now - window` |
 | Drop formula | `(baseline - current) / baseline × 100` (shortening only) |
 | Tiers | OR logic — any configured tier can trigger |
 | Market alerts | One alert per `(match_id, market_type)` — highest drop wins |
-| Re-alert | After alert, wait until odds **rise above** alert price, then allow again |
+| Re-alert | Market disarmed only after DB persist; re-arms when alerted odds recover |
 | Suspended | Skip updates while `bettingEnabled=false`; resume when re-enabled |
+| Missing from feed | Soft TTL eviction (default 600s), not immediate delete |
 | DB | Alerts only — no interim odds storage |
+| Telegram | Optional — empty `DELTAX_TELEGRAM_GROUPS` skips send, DB still records |
 
 ## Setup
 

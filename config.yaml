@@ -4,22 +4,23 @@ tipsport:
   endpoint: "/rest/external/offer/v1/matches?idSuperSport=16&allEvents=true"
 
 monitor:
-  refresh_seconds: 60
+  refresh_seconds: 30
+  # Drop in-memory state for selections missing from feed after this many seconds.
+  selection_ttl_seconds: 600
   # Future: restrict by hours before kickoff (null = all matches in feed).
   # hours_before_kickoff: 48
 
 # OR logic — any tier that fires triggers an alert candidate.
-# Baseline odds = last known odds at least window_seconds ago.
+# window_seconds: 0 compares current poll vs previous poll (N vs N-1).
+# window_seconds > 0 uses odds at or before (now - window).
 drop_tiers:
-  - window_seconds: 60
+  - window_seconds: 0
     drop_pct: 10
   - window_seconds: 180
     drop_pct: 15
-  - window_seconds: 600
+  - window_seconds: 300
     drop_pct: 20
 
 telegram:
-  # Relative matchUrl from API is appended to base_url when set.
   match_url_base: "https://www.tipsport.cz"
-  # Comma-separated group ids to notify (override via DELTAX_ALERT_GROUPS env).
   default_alert_groups: "A"

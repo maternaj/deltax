@@ -11,11 +11,11 @@ from dataclasses import dataclass, field
 import psycopg
 
 from deltax.config import AppConfig, load_config, load_env
-from deltax.db import SQL_INSERT_ALERT, connect
-from deltax.drop_detector import MonitorStore, SelectionState, mark_market_alerted, pick_market_alerts, update_selection_state
+from deltax.db import DatabaseError, SQL_INSERT_ALERT, SQL_UPDATE_TELEGRAM, connect, validate_connection
+from deltax.drop_detector import MonitorStore, SelectionState, mark_market_alerted, pick_market_alerts, purge_stale_selections, update_selection_state
 from deltax.messages import format_drop_alert_message, format_match_url
 from deltax.parser import SelectionRow, parse_selections
-from deltax.telegram import broadcast_alert, parse_telegram_groups, resolve_alert_groups, telegram_configured
+from deltax.telegram import TelegramSender, parse_telegram_groups, resolve_alert_groups, telegram_enabled
 from deltax.tipsport_client import TipsportClient
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,8 @@ def setup_logging(level: str | None = None) -> None:
 
 
 def max_tier_window(config: AppConfig) -> int:
-    return max(tier.window_seconds for tier in config.drop_tiers)
+    windows = [tier.window_seconds for tier in config.drop_tiers if tier.window_seconds > 0]
+    return max(windows) if windows else 0
 
 
 class DeltaXMonitor:
@@ -46,32 +47,65 @@ class DeltaXMonitor:
         *,
         client: TipsportClient | None = None,
         env: dict[str, str] | None = None,
+        telegram: TelegramSender | None = None,
     ):
         self.config = config
         self.env = env or dict(os.environ)
         self.client = client or TipsportClient(config.tipsport_base_url)
         self.runtime = MonitorRuntime()
-        self.group_map = parse_telegram_groups(self.env.get("DELTAX_TELEGRAM_GROUPS") or "")
-        self.alert_groups = resolve_alert_groups(config.default_alert_groups, self.group_map)
-        self._max_window = max_tier_window(config)
+        self.telegram = telegram or TelegramSender()
+        self._telegram_enabled = telegram_enabled(self.env)
+        self.group_map = parse_telegram_groups(self.env.get("DELTAX_TELEGRAM_GROUPS") or "") if self._telegram_enabled else {}
+        self.alert_groups = (
+            resolve_alert_groups(config.default_alert_groups, self.group_map)
+            if self._telegram_enabled
+            else []
+        )
+        self._max_window = max(max_tier_window(config), config.refresh_seconds)
 
     def stop(self) -> None:
         self.runtime.running = False
+        self.telegram.close()
 
-    def ingest_rows(self, rows: list[SelectionRow], *, now_ts: float) -> None:
+    def validate_startup(self) -> None:
+        validate_connection(self.env)
+        logger.info("Database connectivity OK")
+        if self._telegram_enabled:
+            if not self.alert_groups:
+                raise ValueError(
+                    "DELTAX_TELEGRAM_GROUPS is set but DELTAX_ALERT_GROUPS did not resolve to any group"
+                )
+            logger.info("Telegram enabled for groups: %s", ",".join(g for g, _ in self.alert_groups))
+        else:
+            logger.info("Telegram disabled — alerts will be persisted to DB only")
+
+    def ingest_rows(self, rows: list[SelectionRow], *, now_ts: float) -> int:
         store = self.runtime.store
         seen: set[int] = set()
+        changed = 0
         for row in rows:
             seen.add(row.opp_id)
             state = store.selections.get(row.opp_id)
             if state is None:
                 state = SelectionState(row=row)
                 store.selections[row.opp_id] = state
-            update_selection_state(store, state, row, now_ts=now_ts, max_window_seconds=self._max_window)
+            if update_selection_state(
+                store,
+                state,
+                row,
+                now_ts=now_ts,
+                max_window_seconds=self._max_window,
+            ):
+                changed += 1
 
-        stale = [opp_id for opp_id in store.selections if opp_id not in seen]
-        for opp_id in stale:
-            del store.selections[opp_id]
+        purged = purge_stale_selections(
+            store,
+            now_ts=now_ts,
+            ttl_seconds=self.config.selection_ttl_seconds,
+        )
+        if purged:
+            logger.debug("Purged %d stale selections from memory", purged)
+        return changed
 
     def process_alerts(self, *, now_ts: float) -> int:
         hits = pick_market_alerts(
@@ -87,14 +121,29 @@ class DeltaXMonitor:
             message = format_drop_alert_message(hit, match_url_base=self.config.match_url_base)
             match_url = format_match_url(self.config.match_url_base, hit.row.match_url)
 
+            alert_id = self._persist_alert(hit, message, match_url)
+            if alert_id is None:
+                logger.error(
+                    "Skipping market disarm for opp_id=%s — alert was not persisted",
+                    hit.opp_id,
+                )
+                continue
+
             telegram_ok = False
             groups_sent = ""
-            if telegram_configured(self.env) and self.alert_groups:
-                telegram_ok, groups_sent = broadcast_alert(message, alert_groups=self.alert_groups)
-            elif not telegram_configured(self.env):
-                logger.warning("Telegram not configured — alert logged to DB only")
+            if self._telegram_enabled and self.alert_groups:
+                telegram_ok, groups_sent = self.telegram.broadcast(
+                    message,
+                    alert_groups=self.alert_groups,
+                )
+                if not telegram_ok:
+                    logger.warning(
+                        "Telegram delivery failed for opp_id=%s (alert_id=%s persisted)",
+                        hit.opp_id,
+                        alert_id,
+                    )
+                self._update_telegram_status(alert_id, telegram_ok, groups_sent)
 
-            self._persist_alert(hit, message, match_url, telegram_ok, groups_sent)
             mark_market_alerted(self.runtime.store, hit)
             sent += 1
             logger.info(
@@ -112,9 +161,7 @@ class DeltaXMonitor:
         hit,
         message: str,
         match_url: str,
-        telegram_ok: bool,
-        groups_sent: str,
-    ) -> None:
+    ) -> int | None:
         row = hit.row
         params = {
             "opp_id": hit.opp_id,
@@ -131,16 +178,35 @@ class DeltaXMonitor:
             "tier_drop_pct": hit.tier.drop_pct,
             "match_url": match_url or row.match_url,
             "message": message,
+            "telegram_ok": False,
+            "telegram_groups": "",
+        }
+        try:
+            with connect(self.env) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(SQL_INSERT_ALERT, params)
+                    row = cur.fetchone()
+                conn.commit()
+            return int(row[0]) if row else None
+        except psycopg.Error:
+            logger.exception("Failed to persist alert opp_id=%s", hit.opp_id)
+            return None
+
+    def _update_telegram_status(self, alert_id: int, telegram_ok: bool, groups_sent: str) -> None:
+        if not self._telegram_enabled:
+            return
+        params = {
+            "alert_id": alert_id,
             "telegram_ok": telegram_ok,
             "telegram_groups": groups_sent,
         }
         try:
             with connect(self.env) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(SQL_INSERT_ALERT, params)
+                    cur.execute(SQL_UPDATE_TELEGRAM, params)
                 conn.commit()
         except psycopg.Error:
-            logger.exception("Failed to persist alert opp_id=%s", hit.opp_id)
+            logger.exception("Failed to update telegram status for alert_id=%s", alert_id)
 
     def run_cycle(self) -> dict[str, int | bool]:
         payload = self.client.fetch(self.config.tipsport_endpoint)
@@ -149,30 +215,33 @@ class DeltaXMonitor:
 
         rows = parse_selections(payload)
         now_ts = time.time()
-        self.ingest_rows(rows, now_ts=now_ts)
+        changed = self.ingest_rows(rows, now_ts=now_ts)
         alerts = self.process_alerts(now_ts=now_ts)
         return {
             "ok": True,
             "selections": len(rows),
             "tracked": len(self.runtime.store.selections),
+            "changed": changed,
             "alerts": alerts,
         }
 
     def run_forever(self) -> None:
         logger.info(
-            "DeltaX monitor started endpoint=%s refresh=%ss tiers=%s",
+            "DeltaX monitor started endpoint=%s refresh=%ss tiers=%s ttl=%ss",
             self.config.tipsport_endpoint,
             self.config.refresh_seconds,
             [(t.window_seconds, t.drop_pct) for t in self.config.drop_tiers],
+            self.config.selection_ttl_seconds,
         )
         while self.runtime.running:
             started = time.monotonic()
             stats = self.run_cycle()
             if stats.get("ok"):
                 logger.info(
-                    "Cycle OK selections=%s tracked=%s alerts=%s",
+                    "Cycle OK selections=%s tracked=%s changed=%s alerts=%s",
                     stats.get("selections"),
                     stats.get("tracked"),
+                    stats.get("changed"),
                     stats.get("alerts"),
                 )
             else:
@@ -190,6 +259,11 @@ def main() -> None:
     setup_logging()
     config = load_config()
     monitor = DeltaXMonitor(config)
+    try:
+        monitor.validate_startup()
+    except (DatabaseError, psycopg.Error, ValueError) as exc:
+        logger.error("Startup validation failed: %s", exc)
+        raise SystemExit(1) from exc
 
     def _handle_signal(_signum, _frame) -> None:
         logger.info("Shutdown signal received")
@@ -197,7 +271,10 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
-    monitor.run_forever()
+    try:
+        monitor.run_forever()
+    finally:
+        monitor.stop()
 
 
 if __name__ == "__main__":

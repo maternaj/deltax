@@ -50,46 +50,61 @@ def resolve_alert_groups(raw: str, group_map: dict[str, TelegramGroupConfig]) ->
     return out
 
 
-def telegram_configured(env: dict[str, str] | None = None) -> bool:
+def telegram_enabled(env: dict[str, str] | None = None) -> bool:
     env = env or dict(os.environ)
-    return bool((env.get("DELTAX_TELEGRAM_GROUPS") or "").strip())
+    raw = (env.get("DELTAX_TELEGRAM_GROUPS") or "").strip()
+    return bool(raw)
 
 
-def send_telegram_html(token: str, chat_id: str, text: str, *, timeout_s: float = 15.0) -> bool:
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
-    try:
-        with httpx.Client(timeout=timeout_s) as client:
-            response = client.post(url, json=payload)
+class TelegramSender:
+    """Reuse one HTTP client for all Telegram sends in a monitor process."""
+
+    def __init__(self, *, timeout_s: float = 15.0):
+        self._timeout_s = timeout_s
+        self._client: httpx.Client | None = None
+
+    def _client_or_create(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(timeout=self._timeout_s)
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def send_html(self, token: str, chat_id: str, text: str) -> bool:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        try:
+            response = self._client_or_create().post(url, json=payload)
             response.raise_for_status()
             body = response.json()
             return bool(body.get("ok"))
-    except Exception:
-        logger.exception("Telegram send failed for chat_id=%s", chat_id)
-        return False
+        except Exception:
+            logger.exception("Telegram send failed for chat_id=%s", chat_id)
+            return False
 
+    def broadcast(
+        self,
+        text: str,
+        *,
+        alert_groups: list[tuple[str, TelegramGroupConfig]],
+    ) -> tuple[bool, str]:
+        if not alert_groups:
+            return False, ""
 
-def broadcast_alert(
-    text: str,
-    *,
-    alert_groups: list[tuple[str, TelegramGroupConfig]],
-) -> tuple[bool, str]:
-    """Send to all configured groups. Returns (all_ok, comma-separated group ids)."""
-    if not alert_groups:
-        logger.warning("No alert groups configured")
-        return False, ""
-
-    sent_groups: list[str] = []
-    all_ok = True
-    for group_id, group in alert_groups:
-        ok = send_telegram_html(group.token, group.chat_id, text)
-        if ok:
-            sent_groups.append(group_id)
-        else:
-            all_ok = False
-    return all_ok, ",".join(sent_groups)
+        sent_groups: list[str] = []
+        all_ok = True
+        for group_id, group in alert_groups:
+            ok = self.send_html(group.token, group.chat_id, text)
+            if ok:
+                sent_groups.append(group_id)
+            else:
+                all_ok = False
+        return all_ok, ",".join(sent_groups)

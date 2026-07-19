@@ -22,6 +22,7 @@ class AppConfig:
     tipsport_base_url: str
     tipsport_endpoint: str
     refresh_seconds: int
+    selection_ttl_seconds: int
     drop_tiers: tuple[DropTier, ...]
     match_url_base: str
     default_alert_groups: str
@@ -48,23 +49,33 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
 
     tiers: list[DropTier] = []
     for row in raw.get("drop_tiers") or []:
+        window_seconds = int(row["window_seconds"])
+        if window_seconds < 0:
+            raise ValueError(f"drop tier window_seconds must be >= 0, got {window_seconds}")
         tiers.append(
             DropTier(
-                window_seconds=int(row["window_seconds"]),
+                window_seconds=window_seconds,
                 drop_pct=float(row["drop_pct"]),
             )
         )
     if not tiers:
         raise ValueError("drop_tiers must contain at least one entry")
 
-    refresh = int(env.get("DELTAX_REFRESH_SECONDS") or monitor.get("refresh_seconds") or 60)
+    refresh = int(env.get("DELTAX_REFRESH_SECONDS") or monitor.get("refresh_seconds") or 30)
     if refresh < 5:
         raise ValueError("refresh_seconds must be >= 5")
+
+    selection_ttl = int(
+        env.get("DELTAX_SELECTION_TTL_SECONDS") or monitor.get("selection_ttl_seconds") or 600
+    )
+    if selection_ttl < refresh:
+        raise ValueError("selection_ttl_seconds must be >= refresh_seconds")
 
     return AppConfig(
         tipsport_base_url=str(tipsport.get("base_url") or "https://www.tipsport.cz").rstrip("/"),
         tipsport_endpoint=str(tipsport.get("endpoint") or ""),
         refresh_seconds=refresh,
+        selection_ttl_seconds=selection_ttl,
         drop_tiers=tuple(sorted(tiers, key=lambda t: t.window_seconds)),
         match_url_base=str(telegram.get("match_url_base") or "https://www.tipsport.cz").rstrip("/"),
         default_alert_groups=str(

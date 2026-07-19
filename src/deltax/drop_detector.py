@@ -18,6 +18,8 @@ class PriceSample:
 class SelectionState:
     row: SelectionRow
     history: list[PriceSample] = field(default_factory=list)
+    last_odd: float | None = None
+    last_seen_ts: float = 0.0
 
     @property
     def opp_id(self) -> int:
@@ -39,6 +41,7 @@ class MarketAlertState:
 class MonitorStore:
     selections: dict[int, SelectionState] = field(default_factory=dict)
     markets: dict[tuple[int, str], MarketAlertState] = field(default_factory=dict)
+    changed_opp_ids: set[int] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,15 @@ def compute_drop_pct(baseline: float, current: float) -> float:
     return (baseline - current) / baseline * 100.0
 
 
+def _baseline_for_tier(state: SelectionState, *, now_ts: float, tier: DropTier) -> float | None:
+    if tier.window_seconds == 0:
+        if len(state.history) < 2:
+            return None
+        return state.history[-2].odd
+    baseline_ts = now_ts - tier.window_seconds
+    return odds_at_or_before(state.history, baseline_ts)
+
+
 def evaluate_selection(
     state: SelectionState,
     *,
@@ -78,15 +90,14 @@ def evaluate_selection(
 ) -> DropHit | None:
     if not market_armed:
         return None
-    if not state.history:
+    if len(state.history) < 2:
         return None
 
     current = state.history[-1].odd
     best: DropHit | None = None
 
     for tier in tiers:
-        baseline_ts = now_ts - tier.window_seconds
-        baseline = odds_at_or_before(state.history, baseline_ts)
+        baseline = _baseline_for_tier(state, now_ts=now_ts, tier=tier)
         if baseline is None:
             continue
         drop_pct = compute_drop_pct(baseline, current)
@@ -142,15 +153,32 @@ def update_selection_state(
     *,
     now_ts: float,
     max_window_seconds: int,
-) -> None:
+) -> bool:
+    """Update in-memory state. Returns True when odds changed vs previous sample."""
     state.row = row
+    state.last_seen_ts = now_ts
     if not row.betting_enabled:
-        return
+        return False
 
+    previous_odd = state.last_odd
+    state.last_odd = row.odd
     state.history.append(PriceSample(ts=now_ts, odd=row.odd))
     cutoff = now_ts - max_window_seconds - 120
     trim_history(state.history, cutoff_ts=cutoff)
     update_market_recovery(store, market_key=state.market_key, opp_id=state.opp_id, odd=row.odd)
+
+    changed = previous_odd is not None and previous_odd != row.odd
+    if changed:
+        store.changed_opp_ids.add(state.opp_id)
+    return changed
+
+
+def purge_stale_selections(store: MonitorStore, *, now_ts: float, ttl_seconds: int) -> int:
+    cutoff = now_ts - ttl_seconds
+    stale = [opp_id for opp_id, state in store.selections.items() if state.last_seen_ts < cutoff]
+    for opp_id in stale:
+        del store.selections[opp_id]
+    return len(stale)
 
 
 def mark_market_alerted(store: MonitorStore, hit: DropHit) -> None:
@@ -168,9 +196,15 @@ def pick_market_alerts(
     now_ts: float,
     tiers: tuple[DropTier, ...],
 ) -> list[DropHit]:
-    """One alert per (match_id, market_type): highest drop in armed markets."""
+    """One alert per (match_id, market_type) among selections whose odds changed."""
+    if not store.changed_opp_ids:
+        return []
+
     best_by_market: dict[tuple[int, str], DropHit] = {}
-    for state in store.selections.values():
+    for opp_id in store.changed_opp_ids:
+        state = store.selections.get(opp_id)
+        if state is None:
+            continue
         market = store.markets.get(state.market_key)
         market_armed = market.armed if market is not None else True
         hit = evaluate_selection(
@@ -185,4 +219,5 @@ def pick_market_alerts(
         existing = best_by_market.get(key)
         if existing is None or hit.drop_pct > existing.drop_pct:
             best_by_market[key] = hit
+    store.changed_opp_ids.clear()
     return list(best_by_market.values())

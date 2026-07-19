@@ -4,7 +4,7 @@ from deltax.config import DropTier
 from deltax.drop_detector import DropHit
 from deltax.messages import format_drop_alert_message, format_match_url
 from deltax.parser import SelectionRow
-from deltax.telegram import parse_telegram_groups
+from deltax.telegram import TelegramSender, parse_telegram_groups, telegram_enabled
 
 
 def test_format_match_url() -> None:
@@ -34,7 +34,7 @@ def test_format_drop_alert_message_contains_link() -> None:
         drop_pct=10.0,
         baseline_odds=2.0,
         current_odds=1.8,
-        tier=DropTier(window_seconds=60, drop_pct=10),
+        tier=DropTier(window_seconds=0, drop_pct=10),
         row=row,
     )
     msg = format_drop_alert_message(hit, match_url_base="https://www.tipsport.cz")
@@ -47,3 +47,11 @@ def test_parse_telegram_groups() -> None:
     groups = parse_telegram_groups(raw)
     assert set(groups) == {"A", "B"}
     assert groups["A"].chat_id == "-999"
+
+
+def test_telegram_sender_reuses_client() -> None:
+    sender = TelegramSender()
+    client_a = sender._client_or_create()
+    client_b = sender._client_or_create()
+    assert client_a is client_b
+    sender.close()

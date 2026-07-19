@@ -16,6 +16,8 @@ class DatabaseError(Exception):
 def _connection_kwargs(env: dict[str, str], *, timeout_s: float) -> dict[str, Any]:
     url = (env.get("DELTAX_DATABASE_URL") or "").strip()
     if url:
+        if "@HOST:" in url or "://deltax_writer:PASSWORD@" in url:
+            raise DatabaseError("DELTAX_DATABASE_URL still contains placeholder values")
         return {"conninfo": url, "connect_timeout": int(timeout_s)}
 
     host = (env.get("DELTAX_DB_HOST") or "").strip()
@@ -30,6 +32,8 @@ def _connection_kwargs(env: dict[str, str], *, timeout_s: float) -> dict[str, An
         raise DatabaseError(
             "Set DELTAX_DATABASE_URL or DELTAX_DB_HOST/DELTAX_DB_USER in .env"
         )
+    if host.upper() == "HOST" or password.upper() == "PASSWORD":
+        raise DatabaseError("Database settings still contain placeholder HOST/PASSWORD")
 
     safe_password = quote_plus(password)
     conninfo = f"postgresql://{user}:{safe_password}@{host}:{port}/{name}?sslmode={sslmode}"
@@ -39,6 +43,13 @@ def _connection_kwargs(env: dict[str, str], *, timeout_s: float) -> dict[str, An
 def connect(env: dict[str, str] | None = None, *, timeout_s: float = 15.0) -> psycopg.Connection:
     env = env or dict(os.environ)
     return psycopg.connect(**_connection_kwargs(env, timeout_s=timeout_s))
+
+
+def validate_connection(env: dict[str, str] | None = None, *, timeout_s: float = 10.0) -> None:
+    """Fail fast when database is unreachable or misconfigured."""
+    with connect(env, timeout_s=timeout_s) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
 
 
 SQL_INSERT_ALERT = """
@@ -56,4 +67,11 @@ INSERT INTO deltax_alerts (
     %(match_url)s, %(message)s, %(telegram_ok)s, %(telegram_groups)s
 )
 RETURNING alert_id
+"""
+
+SQL_UPDATE_TELEGRAM = """
+UPDATE deltax_alerts
+SET telegram_ok = %(telegram_ok)s,
+    telegram_groups = %(telegram_groups)s
+WHERE alert_id = %(alert_id)s
 """

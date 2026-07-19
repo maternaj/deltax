@@ -29,11 +29,13 @@ def format_kickoff(date_start_ms: int | None) -> str:
 def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
-    tier_min = hit.tier.window_seconds // 60
-    if tier_min < 1:
-        tier_label = f"{hit.tier.window_seconds}s"
+    tier_seconds = hit.tier.window_seconds
+    if tier_seconds == 0:
+        tier_label = "poll"
+    elif tier_seconds < 60:
+        tier_label = f"{tier_seconds}s"
     else:
-        tier_label = f"{tier_min}m"
+        tier_label = f"{tier_seconds // 60}m"
 
     lines = [
         "<b>DeltaX — prematch odds drop</b>",
