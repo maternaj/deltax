@@ -66,13 +66,13 @@ def validate_connection(env: dict[str, str] | None = None, *, timeout_s: float =
                 """
                 INSERT INTO deltax_alerts (
                     opp_id, event_id, match_id, my_selection_id,
-                    odds_previous, odds_now, drop_pct,
-                    tier_window_seconds, tier_drop_pct,
+                    odds_previous, odds_now, drop_pct, implied_drop_pct,
+                    tier_window_seconds, tier_drop_pct, tier_implied_drop_pct,
                     baseline_observed_at, current_observed_at,
                     tipsport_snapshot, message
                 ) VALUES (
                     -1, -1, -1, 'STARTUP_CHECK',
-                    2.0, 1.8, 10, 0, 10,
+                    2.0, 1.8, 10, 0, 0, 10, 0,
                     %(baseline_at)s, %(current_at)s,
                     '{}'::jsonb, 'startup check'
                 )
@@ -91,8 +91,8 @@ INSERT INTO deltax_alerts (
     match_type, kickoff_at, match_url,
     event_name, opp_name, opp_type, opp_number,
     betting_enabled_at_alert,
-    odds_previous, odds_now, drop_pct,
-    tier_window_seconds, tier_drop_pct,
+    odds_previous, odds_now, drop_pct, implied_drop_pct,
+    tier_window_seconds, tier_drop_pct, tier_implied_drop_pct,
     baseline_observed_at, current_observed_at,
     tipsport_snapshot,
     message, telegram_ok, telegram_groups
@@ -103,8 +103,8 @@ INSERT INTO deltax_alerts (
     %(match_type)s, %(kickoff_at)s, %(match_url)s,
     %(event_name)s, %(opp_name)s, %(opp_type)s, %(opp_number)s,
     %(betting_enabled_at_alert)s,
-    %(odds_previous)s, %(odds_now)s, %(drop_pct)s,
-    %(tier_window_seconds)s, %(tier_drop_pct)s,
+    %(odds_previous)s, %(odds_now)s, %(drop_pct)s, %(implied_drop_pct)s,
+    %(tier_window_seconds)s, %(tier_drop_pct)s, %(tier_implied_drop_pct)s,
     %(baseline_observed_at)s, %(current_observed_at)s,
     %(tipsport_snapshot)s,
     %(message)s, %(telegram_ok)s, %(telegram_groups)s

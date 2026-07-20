@@ -36,10 +36,21 @@ cp .env.example .env   # edit DB + Telegram
 ### SQL (once on VPS)
 
 ```bash
+# 1. Writer role (postgres superuser)
 psql "postgresql://postgres@HOST:5432/postgres" -v ON_ERROR_STOP=1 -f sql/00_create_deltax_writer.sql
+
+# 2a. Fresh database — full bootstrap
 psql "postgresql://alex@HOST:5432/alex" -v ON_ERROR_STOP=1 -f sql/01_create_deltax_alerts.sql
+
+# 2b. Existing database — apply pending migrations only
+chmod +x scripts/apply_migrations.sh
+./scripts/apply_migrations.sh "postgresql://alex@HOST:5432/alex"
+
 # ALTER USER deltax_writer PASSWORD '…';
 ```
+
+Schema changes after the initial bootstrap go in `sql/migrations/` as numbered files
+(`002_…`, `003_…`). Each migration records itself in `deltax_schema_migrations`.
 
 ### Config
 
