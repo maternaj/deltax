@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -45,26 +46,68 @@ def connect(env: dict[str, str] | None = None, *, timeout_s: float = 15.0) -> ps
     return psycopg.connect(**_connection_kwargs(env, timeout_s=timeout_s))
 
 
+def epoch_to_timestamptz(ts: float) -> datetime:
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def kickoff_from_date_start(date_start_ms: int | None) -> datetime | None:
+    if date_start_ms is None:
+        return None
+    return datetime.fromtimestamp(date_start_ms / 1000.0, tz=timezone.utc)
+
+
 def validate_connection(env: dict[str, str] | None = None, *, timeout_s: float = 10.0) -> None:
-    """Fail fast when database is unreachable or misconfigured."""
+    """Fail fast when database is unreachable, misconfigured, or missing INSERT/RETURNING rights."""
+    now = datetime.now(timezone.utc)
     with connect(env, timeout_s=timeout_s) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
+            cur.execute(
+                """
+                INSERT INTO deltax_alerts (
+                    opp_id, event_id, match_id, my_selection_id,
+                    odds_previous, odds_now, drop_pct,
+                    tier_window_seconds, tier_drop_pct,
+                    baseline_observed_at, current_observed_at,
+                    tipsport_snapshot, message
+                ) VALUES (
+                    -1, -1, -1, 'STARTUP_CHECK',
+                    2.0, 1.8, 10, 0, 10,
+                    %(baseline_at)s, %(current_at)s,
+                    '{}'::jsonb, 'startup check'
+                )
+                RETURNING alert_id
+                """,
+                {"baseline_at": now, "current_at": now},
+            )
+        conn.rollback()
 
 
 SQL_INSERT_ALERT = """
 INSERT INTO deltax_alerts (
-    opp_id, match_id, market_type,
-    match_name, competition_name, event_name, opp_name,
-    baseline_odds, current_odds, drop_pct,
+    opp_id, event_id, match_id, my_selection_id,
+    match_name, home_participant, visiting_participant,
+    competition_name, sport_name, super_sport_name,
+    match_type, kickoff_at, match_url,
+    event_name, opp_name, opp_type, opp_number,
+    betting_enabled_at_alert,
+    odds_previous, odds_now, drop_pct,
     tier_window_seconds, tier_drop_pct,
-    match_url, message, telegram_ok, telegram_groups
+    baseline_observed_at, current_observed_at,
+    tipsport_snapshot,
+    message, telegram_ok, telegram_groups
 ) VALUES (
-    %(opp_id)s, %(match_id)s, %(market_type)s,
-    %(match_name)s, %(competition_name)s, %(event_name)s, %(opp_name)s,
-    %(baseline_odds)s, %(current_odds)s, %(drop_pct)s,
+    %(opp_id)s, %(event_id)s, %(match_id)s, %(my_selection_id)s,
+    %(match_name)s, %(home_participant)s, %(visiting_participant)s,
+    %(competition_name)s, %(sport_name)s, %(super_sport_name)s,
+    %(match_type)s, %(kickoff_at)s, %(match_url)s,
+    %(event_name)s, %(opp_name)s, %(opp_type)s, %(opp_number)s,
+    %(betting_enabled_at_alert)s,
+    %(odds_previous)s, %(odds_now)s, %(drop_pct)s,
     %(tier_window_seconds)s, %(tier_drop_pct)s,
-    %(match_url)s, %(message)s, %(telegram_ok)s, %(telegram_groups)s
+    %(baseline_observed_at)s, %(current_observed_at)s,
+    %(tipsport_snapshot)s,
+    %(message)s, %(telegram_ok)s, %(telegram_groups)s
 )
 RETURNING alert_id
 """

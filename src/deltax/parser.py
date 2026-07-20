@@ -2,34 +2,78 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-_MARKET_TYPE_RE = re.compile(r"\d+-(.+)-\d+$")
+_MATCH_SNAPSHOT_KEYS = (
+    "id",
+    "name",
+    "matchType",
+    "matchUrl",
+    "dateStart",
+    "idCompetition",
+    "nameCompetition",
+    "idSport",
+    "nameSport",
+    "idSuperSport",
+    "nameSuperSport",
+    "homeParticipant",
+    "visitingParticipant",
+    "homeParticipantId",
+    "visitingParticipantId",
+)
+_EVENT_SNAPSHOT_KEYS = ("id", "name", "mySelectionId")
+_OPP_SNAPSHOT_KEYS = (
+    "id",
+    "name",
+    "odd",
+    "bettingEnabled",
+    "type",
+    "oppNumber",
+    "winning",
+    "mostBet",
+    "idEvent",
+)
 
 
-def extract_market_type(my_selection_id: str) -> str:
-    match = _MARKET_TYPE_RE.match(my_selection_id or "")
-    if match:
-        return match.group(1)
-    return my_selection_id or ""
+def _snapshot_slice(source: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    return {key: source[key] for key in keys if key in source}
+
+
+def build_tipsport_snapshot(
+    match: dict[str, Any],
+    event: dict[str, Any],
+    opp: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "match": _snapshot_slice(match, _MATCH_SNAPSHOT_KEYS),
+        "event": _snapshot_slice(event, _EVENT_SNAPSHOT_KEYS),
+        "opp": _snapshot_slice(opp, _OPP_SNAPSHOT_KEYS),
+    }
 
 
 @dataclass(frozen=True)
 class SelectionRow:
     opp_id: int
+    event_id: int
     match_id: int
-    market_type: str
+    my_selection_id: str
     match_name: str
+    home_participant: str | None
+    visiting_participant: str | None
     competition_name: str
+    sport_name: str | None
+    super_sport_name: str | None
+    match_type: str | None
     event_name: str
     opp_name: str
     odd: float
     betting_enabled: bool
+    opp_type: str | None
+    opp_number: str | None
     match_url: str
-    my_selection_id: str
     date_start: int | None
+    tipsport_snapshot: dict[str, Any]
 
 
 def _iter_events(match: dict[str, Any]) -> Iterable[dict[str, Any]]:
@@ -42,21 +86,35 @@ def _iter_events(match: dict[str, Any]) -> Iterable[dict[str, Any]]:
         yield main
 
 
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def parse_selections(payload: dict[str, Any]) -> list[SelectionRow]:
     rows: list[SelectionRow] = []
     for match in payload.get("matches") or []:
         if not isinstance(match, dict):
             continue
-        match_fields = {
-            "match_id": int(match["id"]),
-            "match_name": str(match.get("name") or ""),
-            "competition_name": str(match.get("nameCompetition") or ""),
-            "match_url": str(match.get("matchUrl") or ""),
-            "date_start": match.get("dateStart"),
-        }
+        match_id = int(match["id"])
+        match_name = str(match.get("name") or "")
+        competition_name = str(match.get("nameCompetition") or "")
+        match_url = str(match.get("matchUrl") or "")
+        date_start_raw = match.get("dateStart")
+        date_start = int(date_start_raw) if date_start_raw is not None else None
+        home_participant = _optional_str(match.get("homeParticipant"))
+        visiting_participant = _optional_str(match.get("visitingParticipant"))
+        sport_name = _optional_str(match.get("nameSport"))
+        super_sport_name = _optional_str(match.get("nameSuperSport"))
+        match_type = _optional_str(match.get("matchType"))
+
         for event in _iter_events(match):
+            event_id_raw = event.get("id")
+            if event_id_raw is None:
+                continue
             my_sel_id = str(event.get("mySelectionId") or "")
-            market_type = extract_market_type(my_sel_id)
             event_name = str(event.get("name") or "")
             for opp in event.get("opps") or []:
                 if not isinstance(opp, dict):
@@ -68,19 +126,25 @@ def parse_selections(payload: dict[str, Any]) -> list[SelectionRow]:
                 rows.append(
                     SelectionRow(
                         opp_id=int(opp_id),
-                        match_id=match_fields["match_id"],
-                        market_type=market_type,
-                        match_name=match_fields["match_name"],
-                        competition_name=match_fields["competition_name"],
+                        event_id=int(event_id_raw),
+                        match_id=match_id,
+                        my_selection_id=my_sel_id,
+                        match_name=match_name,
+                        home_participant=home_participant,
+                        visiting_participant=visiting_participant,
+                        competition_name=competition_name,
+                        sport_name=sport_name,
+                        super_sport_name=super_sport_name,
+                        match_type=match_type,
                         event_name=event_name,
                         opp_name=str(opp.get("name") or ""),
                         odd=float(odd),
                         betting_enabled=bool(opp.get("bettingEnabled")),
-                        match_url=match_fields["match_url"],
-                        my_selection_id=my_sel_id,
-                        date_start=int(match_fields["date_start"])
-                        if match_fields["date_start"] is not None
-                        else None,
+                        opp_type=_optional_str(opp.get("type")),
+                        opp_number=_optional_str(opp.get("oppNumber")),
+                        match_url=match_url,
+                        date_start=date_start,
+                        tipsport_snapshot=build_tipsport_snapshot(match, event, opp),
                     )
                 )
     return rows

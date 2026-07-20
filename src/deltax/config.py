@@ -10,11 +10,14 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from deltax.markets import MarketRegistry, load_market_registry
+
 
 @dataclass(frozen=True)
 class DropTier:
     window_seconds: int
     drop_pct: float
+    implied_drop_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -23,10 +26,12 @@ class AppConfig:
     tipsport_endpoint: str
     refresh_seconds: int
     selection_ttl_seconds: int
+    max_odds: float
     drop_tiers: tuple[DropTier, ...]
     match_url_base: str
     default_alert_groups: str
     config_path: Path
+    market_registry: MarketRegistry
 
 
 def _project_root() -> Path:
@@ -52,10 +57,15 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         window_seconds = int(row["window_seconds"])
         if window_seconds < 0:
             raise ValueError(f"drop tier window_seconds must be >= 0, got {window_seconds}")
+        drop_pct = float(row["drop_pct"])
+        implied_drop_pct = float(row.get("implied_drop_pct") or 0)
+        if drop_pct < 0 or implied_drop_pct < 0:
+            raise ValueError("drop tier thresholds must be >= 0")
         tiers.append(
             DropTier(
                 window_seconds=window_seconds,
-                drop_pct=float(row["drop_pct"]),
+                drop_pct=drop_pct,
+                implied_drop_pct=implied_drop_pct,
             )
         )
     if not tiers:
@@ -71,17 +81,27 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
     if selection_ttl < refresh:
         raise ValueError("selection_ttl_seconds must be >= refresh_seconds")
 
+    max_odds = float(
+        env.get("DELTAX_MAX_ODDS") or monitor.get("max_odds") or monitor.get("min_odds") or 5.0
+    )
+    if max_odds < 0:
+        raise ValueError("max_odds must be >= 0 (0 = no cap)")
+
+    market_registry = load_market_registry(raw, config_path=config_path)
+
     return AppConfig(
         tipsport_base_url=str(tipsport.get("base_url") or "https://www.tipsport.cz").rstrip("/"),
         tipsport_endpoint=str(tipsport.get("endpoint") or ""),
         refresh_seconds=refresh,
         selection_ttl_seconds=selection_ttl,
+        max_odds=max_odds,
         drop_tiers=tuple(sorted(tiers, key=lambda t: t.window_seconds)),
         match_url_base=str(telegram.get("match_url_base") or "https://www.tipsport.cz").rstrip("/"),
         default_alert_groups=str(
             env.get("DELTAX_ALERT_GROUPS") or telegram.get("default_alert_groups") or "A"
         ),
         config_path=config_path,
+        market_registry=market_registry,
     )
 
 

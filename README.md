@@ -14,8 +14,10 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 | Tracking key | Tipsport `opp_id` (selection id) |
 | Drop baseline | `window_seconds: 0` = previous poll; else odds at `now - window` |
 | Drop formula | `(baseline - current) / baseline × 100` (shortening only) |
-| Tiers | OR logic — any configured tier can trigger |
-| Market alerts | One alert per `(match_id, market_type)` — highest drop wins |
+| Drop tiers | OR across tiers; within each tier both `drop_pct` and `implied_drop_pct` must pass (0 = disabled) |
+| Dedup | One alert per `(match_id, my_selection_id)` — highest drop wins among selections with current odds at or below `max_odds` |
+| Max odds | Selections with current odds above `monitor.max_odds` (default 5.0) are excluded before template winner is chosen |
+| Markets | `wanted` and `pending` are monitored; `blacklisted` are ignored; unknown `my_selection_id` values auto-added to `pending` |
 | Re-alert | Market disarmed only after DB persist; re-arms when alerted odds recover |
 | Suspended | Skip updates while `bettingEnabled=false`; resume when re-enabled |
 | Missing from feed | Soft TTL eviction (default 600s), not immediate delete |
@@ -41,8 +43,22 @@ psql "postgresql://alex@HOST:5432/alex" -v ON_ERROR_STOP=1 -f sql/01_create_delt
 
 ### Config
 
-- `config.yaml` — endpoint, refresh interval, drop tiers, Telegram defaults
+- `config.yaml` — endpoint, refresh interval, drop tiers, min odds, market lists, Telegram defaults
 - `.env` — `DELTAX_DATABASE_URL`, `DELTAX_TELEGRAM_GROUPS`, `DELTAX_ALERT_GROUPS`
+
+Market lists in `config.yaml`:
+
+```yaml
+monitor:
+  max_odds: 5.0
+
+markets:
+  wanted: []      # full my_selection_id values, e.g. 16-WINNER_3W-1
+  pending: []
+  blacklisted: [] # e.g. 16-WINNER_3W-2 period templates
+```
+
+Unknown `my_selection_id` values discovered at runtime are appended to `markets.pending` in `config.yaml`.
 
 Drop tiers example:
 

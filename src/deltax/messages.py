@@ -37,6 +37,14 @@ def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     else:
         tier_label = f"{tier_seconds // 60}m"
 
+    drop_line = f"Drop: <b>{hit.drop_pct:.1f}%</b> odds"
+    if hit.tier.implied_drop_pct > 0:
+        drop_line += f" / <b>{hit.implied_drop_pct:.1f}%</b> implied"
+    drop_line += f" (tier {tier_label} / {hit.tier.drop_pct:g}%"
+    if hit.tier.implied_drop_pct > 0:
+        drop_line += f" + {hit.tier.implied_drop_pct:g}% implied"
+    drop_line += ")"
+
     lines = [
         "<b>DeltaX — prematch odds drop</b>",
         "",
@@ -47,8 +55,8 @@ def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
         f"Market: {escape(row.event_name)}",
         f"Selection: {escape(row.opp_name)}",
         "",
-        f"Odds: {hit.baseline_odds:.2f} → {hit.current_odds:.2f}",
-        f"Drop: <b>{hit.drop_pct:.1f}%</b> (tier {tier_label} / {hit.tier.drop_pct:g}%)",
+        f"Odds: {hit.odds_previous:.2f} → {hit.odds_now:.2f}",
+        drop_line,
         "",
         f'<a href="{escape(url, quote=True)}">Tipsport prematch</a>',
     ]

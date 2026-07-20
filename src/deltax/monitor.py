@@ -9,9 +9,18 @@ import time
 from dataclasses import dataclass, field
 
 import psycopg
+from psycopg.types.json import Json
 
 from deltax.config import AppConfig, load_config, load_env
-from deltax.db import DatabaseError, SQL_INSERT_ALERT, SQL_UPDATE_TELEGRAM, connect, validate_connection
+from deltax.db import (
+    DatabaseError,
+    SQL_INSERT_ALERT,
+    SQL_UPDATE_TELEGRAM,
+    connect,
+    epoch_to_timestamptz,
+    kickoff_from_date_start,
+    validate_connection,
+)
 from deltax.drop_detector import MonitorStore, SelectionState, mark_market_alerted, pick_market_alerts, purge_stale_selections, update_selection_state
 from deltax.messages import format_drop_alert_message, format_match_url
 from deltax.parser import SelectionRow, parse_selections
@@ -81,9 +90,13 @@ class DeltaXMonitor:
 
     def ingest_rows(self, rows: list[SelectionRow], *, now_ts: float) -> int:
         store = self.runtime.store
+        registry = self.config.market_registry
         seen: set[int] = set()
         changed = 0
         for row in rows:
+            registry.register_seen(row.my_selection_id)
+            if not registry.should_process(row.my_selection_id):
+                continue
             seen.add(row.opp_id)
             state = store.selections.get(row.opp_id)
             if state is None:
@@ -112,6 +125,7 @@ class DeltaXMonitor:
             self.runtime.store,
             now_ts=now_ts,
             tiers=self.config.drop_tiers,
+            max_odds=self.config.max_odds,
         )
         if not hits:
             return 0
@@ -147,10 +161,10 @@ class DeltaXMonitor:
             mark_market_alerted(self.runtime.store, hit)
             sent += 1
             logger.info(
-                "Alert opp_id=%s match=%s market=%s drop=%.1f%% telegram_ok=%s",
+                "Alert opp_id=%s match=%s selection_id=%s drop=%.1f%% telegram_ok=%s",
                 hit.opp_id,
                 hit.match_id,
-                hit.market_type,
+                hit.my_selection_id,
                 hit.drop_pct,
                 telegram_ok,
             )
@@ -165,18 +179,31 @@ class DeltaXMonitor:
         row = hit.row
         params = {
             "opp_id": hit.opp_id,
+            "event_id": row.event_id,
             "match_id": hit.match_id,
-            "market_type": hit.market_type,
+            "my_selection_id": hit.my_selection_id,
             "match_name": row.match_name,
+            "home_participant": row.home_participant,
+            "visiting_participant": row.visiting_participant,
             "competition_name": row.competition_name,
+            "sport_name": row.sport_name,
+            "super_sport_name": row.super_sport_name,
+            "match_type": row.match_type,
+            "kickoff_at": kickoff_from_date_start(row.date_start),
+            "match_url": match_url or row.match_url,
             "event_name": row.event_name,
             "opp_name": row.opp_name,
-            "baseline_odds": hit.baseline_odds,
-            "current_odds": hit.current_odds,
+            "opp_type": row.opp_type,
+            "opp_number": row.opp_number,
+            "betting_enabled_at_alert": row.betting_enabled,
+            "odds_previous": hit.odds_previous,
+            "odds_now": hit.odds_now,
             "drop_pct": hit.drop_pct,
             "tier_window_seconds": hit.tier.window_seconds,
             "tier_drop_pct": hit.tier.drop_pct,
-            "match_url": match_url or row.match_url,
+            "baseline_observed_at": epoch_to_timestamptz(hit.baseline_observed_at),
+            "current_observed_at": epoch_to_timestamptz(hit.current_observed_at),
+            "tipsport_snapshot": Json(row.tipsport_snapshot),
             "message": message,
             "telegram_ok": False,
             "telegram_groups": "",
@@ -227,11 +254,16 @@ class DeltaXMonitor:
 
     def run_forever(self) -> None:
         logger.info(
-            "DeltaX monitor started endpoint=%s refresh=%ss tiers=%s ttl=%ss",
+            "DeltaX monitor started endpoint=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
+            "markets wanted=%d pending=%d blacklisted=%d",
             self.config.tipsport_endpoint,
             self.config.refresh_seconds,
+            self.config.max_odds,
             [(t.window_seconds, t.drop_pct) for t in self.config.drop_tiers],
             self.config.selection_ttl_seconds,
+            len(self.config.market_registry.wanted),
+            len(self.config.market_registry.pending),
+            len(self.config.market_registry.blacklisted),
         )
         while self.runtime.running:
             started = time.monotonic()

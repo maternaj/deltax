@@ -27,7 +27,7 @@ class SelectionState:
 
     @property
     def market_key(self) -> tuple[int, str]:
-        return self.row.match_id, self.row.market_type
+        return self.row.match_id, self.row.my_selection_id
 
 
 @dataclass
@@ -48,22 +48,30 @@ class MonitorStore:
 class DropHit:
     opp_id: int
     match_id: int
-    market_type: str
+    my_selection_id: str
     drop_pct: float
-    baseline_odds: float
-    current_odds: float
+    implied_drop_pct: float
+    odds_previous: float
+    odds_now: float
+    baseline_observed_at: float
+    current_observed_at: float
     tier: DropTier
     row: SelectionRow
 
 
-def odds_at_or_before(history: list[PriceSample], target_ts: float) -> float | None:
-    result: float | None = None
+def sample_at_or_before(history: list[PriceSample], target_ts: float) -> PriceSample | None:
+    result: PriceSample | None = None
     for sample in history:
         if sample.ts <= target_ts:
-            result = sample.odd
+            result = sample
         else:
             break
     return result
+
+
+def odds_at_or_before(history: list[PriceSample], target_ts: float) -> float | None:
+    sample = sample_at_or_before(history, target_ts)
+    return sample.odd if sample is not None else None
 
 
 def compute_drop_pct(baseline: float, current: float) -> float:
@@ -72,13 +80,31 @@ def compute_drop_pct(baseline: float, current: float) -> float:
     return (baseline - current) / baseline * 100.0
 
 
-def _baseline_for_tier(state: SelectionState, *, now_ts: float, tier: DropTier) -> float | None:
+def compute_implied_drop_pct(baseline: float, current: float) -> float:
+    """Implied-probability shift: (1/current - 1/baseline) × 100."""
+    if baseline <= 0 or current <= 0:
+        return 0.0
+    return (1.0 / current - 1.0 / baseline) * 100.0
+
+
+def _passes_drop_threshold(actual: float, threshold: float) -> bool:
+    if threshold <= 0:
+        return True
+    return actual + 1e-9 >= threshold
+
+
+def _baseline_sample_for_tier(
+    state: SelectionState,
+    *,
+    now_ts: float,
+    tier: DropTier,
+) -> PriceSample | None:
     if tier.window_seconds == 0:
         if len(state.history) < 2:
             return None
-        return state.history[-2].odd
+        return state.history[-2]
     baseline_ts = now_ts - tier.window_seconds
-    return odds_at_or_before(state.history, baseline_ts)
+    return sample_at_or_before(state.history, baseline_ts)
 
 
 def evaluate_selection(
@@ -93,23 +119,30 @@ def evaluate_selection(
     if len(state.history) < 2:
         return None
 
-    current = state.history[-1].odd
+    current_sample = state.history[-1]
+    current = current_sample.odd
     best: DropHit | None = None
 
     for tier in tiers:
-        baseline = _baseline_for_tier(state, now_ts=now_ts, tier=tier)
-        if baseline is None:
+        baseline_sample = _baseline_sample_for_tier(state, now_ts=now_ts, tier=tier)
+        if baseline_sample is None:
             continue
-        drop_pct = compute_drop_pct(baseline, current)
-        if drop_pct + 1e-9 < tier.drop_pct:
+        drop_pct = compute_drop_pct(baseline_sample.odd, current)
+        implied_drop_pct = compute_implied_drop_pct(baseline_sample.odd, current)
+        if not _passes_drop_threshold(drop_pct, tier.drop_pct):
+            continue
+        if not _passes_drop_threshold(implied_drop_pct, tier.implied_drop_pct):
             continue
         hit = DropHit(
             opp_id=state.opp_id,
             match_id=state.row.match_id,
-            market_type=state.row.market_type,
+            my_selection_id=state.row.my_selection_id,
             drop_pct=drop_pct,
-            baseline_odds=baseline,
-            current_odds=current,
+            implied_drop_pct=implied_drop_pct,
+            odds_previous=baseline_sample.odd,
+            odds_now=current,
+            baseline_observed_at=baseline_sample.ts,
+            current_observed_at=current_sample.ts,
             tier=tier,
             row=state.row,
         )
@@ -182,10 +215,10 @@ def purge_stale_selections(store: MonitorStore, *, now_ts: float, ttl_seconds: i
 
 
 def mark_market_alerted(store: MonitorStore, hit: DropHit) -> None:
-    key = hit.match_id, hit.market_type
+    key = hit.match_id, hit.my_selection_id
     store.markets[key] = MarketAlertState(
         alerted_opp_id=hit.opp_id,
-        last_alert_odds=hit.current_odds,
+        last_alert_odds=hit.odds_now,
         armed=False,
     )
 
@@ -195,8 +228,9 @@ def pick_market_alerts(
     *,
     now_ts: float,
     tiers: tuple[DropTier, ...],
+    max_odds: float = 0.0,
 ) -> list[DropHit]:
-    """One alert per (match_id, market_type) among selections whose odds changed."""
+    """One alert per (match_id, my_selection_id) among selections whose odds changed."""
     if not store.changed_opp_ids:
         return []
 
@@ -204,6 +238,11 @@ def pick_market_alerts(
     for opp_id in store.changed_opp_ids:
         state = store.selections.get(opp_id)
         if state is None:
+            continue
+        if len(state.history) < 2:
+            continue
+        current = state.history[-1].odd
+        if max_odds > 0 and current - 1e-9 > max_odds:
             continue
         market = store.markets.get(state.market_key)
         market_armed = market.armed if market is not None else True
@@ -215,7 +254,7 @@ def pick_market_alerts(
         )
         if hit is None:
             continue
-        key = hit.match_id, hit.market_type
+        key = hit.match_id, hit.my_selection_id
         existing = best_by_market.get(key)
         if existing is None or hit.drop_pct > existing.drop_pct:
             best_by_market[key] = hit
