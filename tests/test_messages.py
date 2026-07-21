@@ -98,16 +98,17 @@ def test_format_drop_alert_message_four_line_layout() -> None:
     lines = msg.splitlines()
 
     assert len(lines) == 4
-    assert lines[0] == "⚽ Premier League"
+    assert lines[0] == "⚽ <b>Premier League</b>"
     assert lines[1] == (
         '🔵 <a href="https://www.tipsport.cz/kurzy/zapas/arsenal-chelsea/8302416">'
         "Arsenal - Chelsea</a>, <b>Celkový počet gólů hráče</b>"
     )
-    assert "➡️ Hráč X - více než 0.5" in lines[2]
-    assert "<b>@ 1.73</b>" in lines[2]
-    assert "was 1.92 → Δ -10.0%/-5.2%" in lines[2]
+    assert (
+        lines[2]
+        == "➡️ <b>Hráč X - více než 0.5 @ 1.73</b> (<s>1.92</s>↓)"
+    )
     assert lines[3].startswith("⏰ ")
-    assert "drop <b>3</b> min · opp 2664187029" in lines[3]
+    assert "drop <b>3</b> min · <b>Δ -10.0%/-5.2%</b>" in lines[3]
 
 
 def test_parse_telegram_groups() -> None:

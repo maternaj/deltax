@@ -127,24 +127,29 @@ def drop_window_minutes(baseline_observed_at: float, current_observed_at: float)
     return int(seconds // 60)
 
 
+def format_drop_delta(drop_pct: float, implied_drop_pct: float) -> str:
+    return f"Δ -{drop_pct:.1f}%/-{implied_drop_pct:.1f}%"
+
+
 def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
     match_link = f'<a href="{escape(url, quote=True)}">{escape(row.match_name)}</a>'
-    drop_delta = f"→ Δ -{hit.drop_pct:.1f}%/-{hit.implied_drop_pct:.1f}%"
+    drop_delta = format_drop_delta(hit.drop_pct, hit.implied_drop_pct)
     drop_min = drop_window_minutes(hit.baseline_observed_at, hit.current_observed_at)
 
-    line1 = f"{sport_emoji(row.super_sport_name)} {escape(row.competition_name)}"
+    line1 = f"{sport_emoji(row.super_sport_name)} <b>{escape(row.competition_name)}</b>"
     line2 = (
         f"{match_phase_emoji(row.match_type)} "
         f"{match_link}, <b>{escape(row.event_name)}</b>"
     )
     line3 = (
-        f"{selection_icon(row.opp_name)} {escape(row.opp_name)} "
-        f"<b>@ {hit.odds_now:.2f}</b> · was {hit.odds_previous:.2f} {drop_delta}"
+        f"{selection_icon(row.opp_name)} "
+        f"<b>{escape(row.opp_name)} @ {hit.odds_now:.2f}</b> "
+        f"(<s>{hit.odds_previous:.2f}</s>↓)"
     )
     line4 = (
         f"⏰ {format_kickoff_prague(row.date_start)} · "
-        f"drop <b>{drop_min}</b> min · opp {hit.opp_id}"
+        f"drop <b>{drop_min}</b> min · <b>{drop_delta}</b>"
     )
     return "\n".join((line1, line2, line3, line4))
