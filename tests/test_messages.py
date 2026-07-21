@@ -67,7 +67,74 @@ def test_format_match_url() -> None:
 
 def test_sport_emoji_czech_and_default() -> None:
     assert sport_emoji("Fotbal") == "⚽"
+    assert sport_emoji("Lední hokej") == "🏒"
+    assert sport_emoji("Esporty") == "🎮"
+    assert sport_emoji("Šipky") == "🎯"
+    assert sport_emoji("Společenské sázky") == "🎰"
     assert sport_emoji("Unknown Sport") == "🏷️"
+
+
+def test_sport_emoji_all_known_super_sports() -> None:
+    known = [
+        "Akrobatické lyžování",
+        "Alpské lyžování",
+        "Americký fotbal",
+        "Atletika",
+        "Australský fotbal",
+        "Badminton",
+        "Bandy",
+        "Baseball",
+        "Basketbal",
+        "Biatlon",
+        "Boby",
+        "Bojové sporty",
+        "Bowls",
+        "Box",
+        "Curling",
+        "Cyklistika",
+        "Dostihy",
+        "Esporty",
+        "Florbal",
+        "Fotbal",
+        "Futsal",
+        "Golf",
+        "Házená",
+        "Hokejbal",
+        "Klasické lyžování",
+        "Krasobruslení",
+        "Kriket",
+        "Lakros",
+        "Lední hokej",
+        "Malý fotbal",
+        "Motorsport",
+        "Padel",
+        "Plavání",
+        "Plážový fotbal",
+        "Plážový volejbal",
+        "Plochá dráha",
+        "Pool",
+        "Pozemní hokej",
+        "Rugby",
+        "Rychlobruslení",
+        "Šachy",
+        "Saně",
+        "Short Track",
+        "Šipky",
+        "Skeleton",
+        "Skialpinismus",
+        "Skoky na lyžích",
+        "Snooker",
+        "Snowboarding",
+        "Softball",
+        "Společenské sázky",
+        "Squash",
+        "Stolní tenis",
+        "Tenis",
+        "Vodní pólo",
+        "Volejbal",
+    ]
+    for name in known:
+        assert sport_emoji(name) != "🏷️", name
 
 
 def test_selection_icon_over_under_default() -> None:
