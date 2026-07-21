@@ -1,6 +1,7 @@
 tipsport:
   base_url: https://www.tipsport.cz
-  endpoint: /rest/external/offer/v1/matches?allEvents=true
+  endpoints:
+  - /rest/external/offer/v1/matches?allEvents=false
 monitor:
   refresh_seconds: 30
   selection_ttl_seconds: 600

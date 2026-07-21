@@ -23,7 +23,7 @@ class DropTier:
 @dataclass(frozen=True)
 class AppConfig:
     tipsport_base_url: str
-    tipsport_endpoint: str
+    tipsport_endpoints: tuple[str, ...]
     refresh_seconds: int
     selection_ttl_seconds: int
     max_odds: float
@@ -36,6 +36,26 @@ class AppConfig:
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _parse_tipsport_endpoints(tipsport: dict[str, Any], env: dict[str, str]) -> tuple[str, ...]:
+    """Resolve Tipsport feed paths from endpoints list or legacy endpoint string."""
+    env_raw = (env.get("DELTAX_TIPSPORT_ENDPOINTS") or "").strip()
+    if env_raw:
+        endpoints = [part.strip() for part in env_raw.split(",") if part.strip()]
+    else:
+        raw_endpoints = tipsport.get("endpoints")
+        if raw_endpoints is not None:
+            if not isinstance(raw_endpoints, list):
+                raise ValueError("tipsport.endpoints must be a list of path strings")
+            endpoints = [str(item).strip() for item in raw_endpoints if str(item).strip()]
+        else:
+            single = str(tipsport.get("endpoint") or "").strip()
+            endpoints = [single] if single else []
+
+    if not endpoints:
+        raise ValueError("tipsport.endpoints (or legacy tipsport.endpoint) must be set")
+    return tuple(endpoints)
 
 
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
@@ -91,7 +111,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
 
     return AppConfig(
         tipsport_base_url=str(tipsport.get("base_url") or "https://www.tipsport.cz").rstrip("/"),
-        tipsport_endpoint=str(tipsport.get("endpoint") or ""),
+        tipsport_endpoints=_parse_tipsport_endpoints(tipsport, env),
         refresh_seconds=refresh,
         selection_ttl_seconds=selection_ttl,
         max_odds=max_odds,

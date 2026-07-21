@@ -238,11 +238,19 @@ class DeltaXMonitor:
             logger.exception("Failed to update telegram status for alert_id=%s", alert_id)
 
     def run_cycle(self) -> dict[str, int | bool]:
-        payload = self.client.fetch(self.config.tipsport_endpoint)
-        if payload is None:
+        rows: list[SelectionRow] = []
+        failed_endpoints = 0
+        for endpoint in self.config.tipsport_endpoints:
+            payload = self.client.fetch(endpoint)
+            if payload is None:
+                failed_endpoints += 1
+                logger.error("Tipsport fetch failed for endpoint=%s", endpoint)
+                continue
+            rows.extend(parse_selections(payload))
+
+        if failed_endpoints == len(self.config.tipsport_endpoints):
             return {"ok": False, "selections": 0, "alerts": 0}
 
-        rows = parse_selections(payload)
         now_ts = time.time()
         changed = self.ingest_rows(rows, now_ts=now_ts)
         alerts = self.process_alerts(now_ts=now_ts)
@@ -252,13 +260,15 @@ class DeltaXMonitor:
             "tracked": len(self.runtime.store.selections),
             "changed": changed,
             "alerts": alerts,
+            "endpoints_ok": len(self.config.tipsport_endpoints) - failed_endpoints,
+            "endpoints_failed": failed_endpoints,
         }
 
     def run_forever(self) -> None:
         logger.info(
-            "DeltaX monitor started endpoint=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
+            "DeltaX monitor started endpoints=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
             "markets wanted=%d pending=%d blacklisted=%d",
-            self.config.tipsport_endpoint,
+            list(self.config.tipsport_endpoints),
             self.config.refresh_seconds,
             self.config.max_odds,
             [(t.window_seconds, t.drop_pct) for t in self.config.drop_tiers],
@@ -272,11 +282,13 @@ class DeltaXMonitor:
             stats = self.run_cycle()
             if stats.get("ok"):
                 logger.info(
-                    "Cycle OK selections=%s tracked=%s changed=%s alerts=%s",
+                    "Cycle OK selections=%s tracked=%s changed=%s alerts=%s endpoints_ok=%s endpoints_failed=%s",
                     stats.get("selections"),
                     stats.get("tracked"),
                     stats.get("changed"),
                     stats.get("alerts"),
+                    stats.get("endpoints_ok"),
+                    stats.get("endpoints_failed"),
                 )
             else:
                 logger.error("Cycle failed — Tipsport fetch returned no data")

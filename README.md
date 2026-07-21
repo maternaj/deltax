@@ -10,7 +10,7 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 
 | Topic | Rule |
 |-------|------|
-| Feed | Configurable endpoint (default soccer bulk `idSuperSport=16&allEvents=true`) |
+| Feed | One or more configurable endpoints; each refresh cycle fetches all in sequence |
 | Tracking key | Tipsport `opp_id` (selection id) |
 | Drop baseline | `window_seconds: 0` = previous poll; else odds at `now - window` |
 | Drop formula | `(baseline - current) / baseline × 100` (shortening only) |
@@ -54,8 +54,20 @@ Schema changes after the initial bootstrap go in `sql/migrations/` as numbered f
 
 ### Config
 
-- `config.yaml` — endpoint, refresh interval, drop tiers, min odds, market lists, Telegram defaults
+- `config.yaml` — endpoints, refresh interval, drop tiers, min odds, market lists, Telegram defaults
 - `.env` — `DELTAX_DATABASE_URL`, `DELTAX_TELEGRAM_GROUPS`, `DELTAX_ALERT_GROUPS`
+
+Tipsport feeds (`tipsport.endpoints` — fetched in sequence every refresh cycle):
+
+```yaml
+tipsport:
+  base_url: https://www.tipsport.cz
+  endpoints:
+    - /rest/external/offer/v1/matches?allEvents=true
+    - /rest/external/offer/v1/matches?idSuperSport=16&allEvents=true
+```
+
+Legacy single `tipsport.endpoint` still works. Override via env: `DELTAX_TIPSPORT_ENDPOINTS=/path/a,/path/b`.
 
 Market lists in `config.yaml`:
 

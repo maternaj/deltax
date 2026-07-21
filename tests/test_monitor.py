@@ -1,5 +1,6 @@
 """Monitor pipeline tests."""
 
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +19,7 @@ def _config() -> AppConfig:
     raw = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     return AppConfig(
         tipsport_base_url="https://www.tipsport.cz",
-        tipsport_endpoint="/matches",
+        tipsport_endpoints=("/matches",),
         refresh_seconds=30,
         selection_ttl_seconds=600,
         max_odds=5.0,
@@ -131,3 +132,66 @@ def test_load_config_uses_my_selection_id_lists() -> None:
     assert "16-WINNER_3W-2" in registry.blacklisted
     assert registry.should_process("16-WINNER_3W-1")
     assert not registry.should_process("16-WINNER_3W-2")
+    assert len(config.tipsport_endpoints) >= 1
+
+
+def test_run_cycle_fetches_all_endpoints_in_sequence() -> None:
+    config = replace(_config(), tipsport_endpoints=("/a", "/b"))
+    monitor = DeltaXMonitor(config, env={"DELTAX_TELEGRAM_GROUPS": ""})
+    calls: list[str] = []
+
+    def fake_fetch(endpoint: str):
+        calls.append(endpoint)
+        return {"matches": []}
+
+    monitor.client.fetch = fake_fetch  # type: ignore[method-assign]
+
+    stats = monitor.run_cycle()
+
+    assert calls == ["/a", "/b"]
+    assert stats["ok"] is True
+    assert stats["endpoints_ok"] == 2
+    assert stats["endpoints_failed"] == 0
+
+
+def test_run_cycle_continues_when_one_endpoint_fails() -> None:
+    config = replace(_config(), tipsport_endpoints=("/bad", "/good"))
+    monitor = DeltaXMonitor(config, env={"DELTAX_TELEGRAM_GROUPS": ""})
+
+    def fake_fetch(endpoint: str):
+        if endpoint == "/bad":
+            return None
+        return {
+            "matches": [
+                {
+                    "id": 1,
+                    "name": "A - B",
+                    "nameCompetition": "League",
+                    "events": [
+                        {
+                            "id": 10,
+                            "name": "Result",
+                            "mySelectionId": "16-WINNER_3W-1",
+                            "opps": [
+                                {
+                                    "id": 101,
+                                    "name": "A",
+                                    "odd": 2.0,
+                                    "bettingEnabled": True,
+                                    "type": "1",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monitor.client.fetch = fake_fetch  # type: ignore[method-assign]
+
+    stats = monitor.run_cycle()
+
+    assert stats["ok"] is True
+    assert stats["selections"] == 1
+    assert stats["endpoints_ok"] == 1
+    assert stats["endpoints_failed"] == 1
