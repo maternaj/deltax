@@ -130,14 +130,14 @@ def drop_window_minutes(baseline_observed_at: float, current_observed_at: float)
 def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
-    opp_link = f'<a href="{escape(url, quote=True)}">{hit.opp_id}</a>'
+    match_link = f'<a href="{escape(url, quote=True)}">{escape(row.match_name)}</a>'
     drop_delta = f"→ Δ -{hit.drop_pct:.1f}%/-{hit.implied_drop_pct:.1f}%"
     drop_min = drop_window_minutes(hit.baseline_observed_at, hit.current_observed_at)
 
     line1 = f"{sport_emoji(row.super_sport_name)} {escape(row.competition_name)}"
     line2 = (
         f"{match_phase_emoji(row.match_type)} "
-        f"{escape(row.match_name)}, <b>{escape(row.event_name)}</b>"
+        f"{match_link}, <b>{escape(row.event_name)}</b>"
     )
     line3 = (
         f"{selection_icon(row.opp_name)} {escape(row.opp_name)} "
@@ -145,6 +145,6 @@ def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     )
     line4 = (
         f"⏰ {format_kickoff_prague(row.date_start)} · "
-        f"drop <b>{drop_min}</b> min · opp {opp_link}"
+        f"drop <b>{drop_min}</b> min · opp {hit.opp_id}"
     )
     return "\n".join((line1, line2, line3, line4))
