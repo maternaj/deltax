@@ -21,6 +21,19 @@ class DropTier:
 
 
 @dataclass(frozen=True)
+class SettleConfig:
+    sleep_seconds: int
+    default_delay_hours: float
+    max_age_days: int
+    batch_match_limit: int
+    match_request_delay_seconds: float
+    market_delay_hours: dict[str, float]
+
+    def delay_hours_for(self, my_selection_id: str) -> float:
+        return self.market_delay_hours.get(my_selection_id, self.default_delay_hours)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     tipsport_base_url: str
     tipsport_endpoints: tuple[str, ...]
@@ -30,6 +43,7 @@ class AppConfig:
     drop_tiers: tuple[DropTier, ...]
     match_url_base: str
     default_alert_groups: str
+    settle: SettleConfig
     config_path: Path
     market_registry: MarketRegistry
 
@@ -58,6 +72,52 @@ def _parse_tipsport_endpoints(tipsport: dict[str, Any], env: dict[str, str]) -> 
     return tuple(endpoints)
 
 
+def _parse_settle_config(settle: dict[str, Any], env: dict[str, str]) -> SettleConfig:
+    sleep_seconds = int(env.get("DELTAX_SETTLE_SLEEP_SECONDS") or settle.get("sleep_seconds") or 900)
+    if sleep_seconds < 60:
+        raise ValueError("settle.sleep_seconds must be >= 60")
+
+    default_delay_hours = float(
+        env.get("DELTAX_SETTLE_DEFAULT_DELAY_HOURS") or settle.get("default_delay_hours") or 6
+    )
+    if default_delay_hours < 0:
+        raise ValueError("settle.default_delay_hours must be >= 0")
+
+    max_age_days = int(env.get("DELTAX_SETTLE_MAX_AGE_DAYS") or settle.get("max_age_days") or 3)
+    if max_age_days < 1:
+        raise ValueError("settle.max_age_days must be >= 1")
+
+    batch_match_limit = int(settle.get("batch_match_limit") or 50)
+    if batch_match_limit < 1:
+        raise ValueError("settle.batch_match_limit must be >= 1")
+
+    match_request_delay_seconds = float(settle.get("match_request_delay_seconds") or 5)
+    if match_request_delay_seconds < 0:
+        raise ValueError("settle.match_request_delay_seconds must be >= 0")
+
+    raw_delays = settle.get("market_delay_hours") or {}
+    if not isinstance(raw_delays, dict):
+        raise ValueError("settle.market_delay_hours must be a mapping of my_selection_id -> hours")
+    market_delay_hours: dict[str, float] = {}
+    for key, value in raw_delays.items():
+        market_id = str(key).strip()
+        if not market_id:
+            continue
+        hours = float(value)
+        if hours < 0:
+            raise ValueError(f"settle.market_delay_hours[{market_id!r}] must be >= 0")
+        market_delay_hours[market_id] = hours
+
+    return SettleConfig(
+        sleep_seconds=sleep_seconds,
+        default_delay_hours=default_delay_hours,
+        max_age_days=max_age_days,
+        batch_match_limit=batch_match_limit,
+        match_request_delay_seconds=match_request_delay_seconds,
+        market_delay_hours=market_delay_hours,
+    )
+
+
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
     env = env or dict(os.environ)
     root = _project_root()
@@ -71,6 +131,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
     tipsport = raw.get("tipsport") or {}
     monitor = raw.get("monitor") or {}
     telegram = raw.get("telegram") or {}
+    settle = _parse_settle_config(raw.get("settle") or {}, env)
 
     tiers: list[DropTier] = []
     for row in raw.get("drop_tiers") or []:
@@ -120,6 +181,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         default_alert_groups=str(
             env.get("DELTAX_ALERT_GROUPS") or telegram.get("default_alert_groups") or "A"
         ),
+        settle=settle,
         config_path=config_path,
         market_registry=market_registry,
     )

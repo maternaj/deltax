@@ -6,7 +6,9 @@ from deltax.messages import (
     drop_window_minutes,
     format_drop_alert_message,
     format_kickoff_prague,
+    format_line4_timing,
     format_match_url,
+    format_time_to_kickoff,
     match_phase_emoji,
     selection_icon,
     sport_emoji,
@@ -158,9 +160,58 @@ def test_format_kickoff_prague() -> None:
     assert kickoff.startswith("2026-")
 
 
+KICKOFF_MS = 1775395800000
+KICKOFF_TS = KICKOFF_MS / 1000.0
+
+
+def test_format_time_to_kickoff_countdown_and_live() -> None:
+    assert format_time_to_kickoff(None, KICKOFF_TS) == "?"
+    assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 8100) == "T-2h 15m"
+    assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 2700) == "T-45m"
+    assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 90000) == "T-1d 1h"
+    assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 12 * 86400) == "T-12d"
+    assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS + 720) == "LIVE +12m"
+
+
+def test_format_line4_timing_layouts() -> None:
+    kickoff = format_kickoff_prague(KICKOFF_MS)
+    tail = "drop <b>3</b> min · <b>Δ -10.0%/-5.2%</b>"
+
+    hours_ahead = format_line4_timing(
+        KICKOFF_MS,
+        KICKOFF_TS - 8100,
+        drop_min=3,
+        drop_delta="Δ -10.0%/-5.2%",
+    )
+    assert hours_ahead == f"⏰ {kickoff} (<b>T-2h 15m</b>) · {tail}"
+
+    urgent = format_line4_timing(
+        KICKOFF_MS,
+        KICKOFF_TS - 2700,
+        drop_min=3,
+        drop_delta="Δ -10.0%/-5.2%",
+    )
+    assert urgent == f"⏰ {kickoff} · <b>🔜 T-45m</b> · {tail}"
+
+    live = format_line4_timing(
+        KICKOFF_MS,
+        KICKOFF_TS + 720,
+        drop_min=3,
+        drop_delta="Δ -10.0%/-5.2%",
+    )
+    assert live == f"⏰ {kickoff} (<b>LIVE +12m</b>) · {tail}"
+
+    missing = format_line4_timing(None, KICKOFF_TS, drop_min=3, drop_delta="Δ -10.0%/-5.2%")
+    assert missing == f"⏰ ? (?) · {tail}"
+
+
 def test_format_drop_alert_message_four_line_layout() -> None:
     row = _selection_row()
-    hit = _drop_hit(row)
+    hit = _drop_hit(
+        row,
+        baseline_observed_at=KICKOFF_TS - 8280,
+        current_observed_at=KICKOFF_TS - 8100,
+    )
     msg = format_drop_alert_message(hit, match_url_base="https://www.tipsport.cz")
     lines = msg.splitlines()
 
@@ -175,6 +226,7 @@ def test_format_drop_alert_message_four_line_layout() -> None:
         == "➡️ <b>Hráč X - více než 0.5 @ 1.73</b> (<s>1.92</s>↓)"
     )
     assert lines[3].startswith("⏰ ")
+    assert "(<b>T-2h 15m</b>)" in lines[3]
     assert "drop <b>3</b> min · <b>Δ -10.0%/-5.2%</b>" in lines[3]
 
 

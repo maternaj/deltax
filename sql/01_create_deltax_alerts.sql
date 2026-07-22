@@ -50,9 +50,22 @@ CREATE TABLE deltax_alerts (
 
     tipsport_snapshot           JSONB NOT NULL,
 
+    odds_at_off                 NUMERIC(12, 4),
+    odds_at_off_observed_at     TIMESTAMPTZ,
+    selection_result            CHAR(1),
+    result_flag                 BOOLEAN NOT NULL DEFAULT false,
+    result_settled_at           TIMESTAMPTZ,
+    result_source               TEXT,
+
     message                     TEXT NOT NULL,
     telegram_ok                 BOOLEAN NOT NULL DEFAULT false,
-    telegram_groups             TEXT
+    telegram_groups             TEXT,
+
+    CONSTRAINT deltax_alerts_selection_result_check
+        CHECK (
+            selection_result IS NULL
+            OR selection_result IN ('W', 'L', 'V', '?', 'E')
+        )
 );
 
 CREATE INDEX deltax_alerts_created_at_idx
@@ -67,6 +80,11 @@ CREATE INDEX deltax_alerts_match_selection_idx
 CREATE INDEX deltax_alerts_my_selection_id_idx
     ON deltax_alerts (my_selection_id, created_at DESC);
 
+CREATE INDEX deltax_alerts_pending_settlement_idx
+    ON deltax_alerts (kickoff_at)
+    WHERE result_flag = false
+      AND kickoff_at IS NOT NULL;
+
 COMMENT ON TABLE deltax_alerts IS
     'Tipsport prematch odds drop alerts emitted by DeltaX monitor';
 
@@ -75,6 +93,20 @@ GRANT SELECT (alert_id) ON TABLE deltax_alerts TO deltax_writer;
 GRANT USAGE, SELECT ON SEQUENCE deltax_alerts_alert_id_seq TO deltax_writer;
 
 GRANT UPDATE (telegram_ok, telegram_groups) ON TABLE deltax_alerts TO deltax_writer;
+
+GRANT SELECT ON TABLE deltax_alerts TO deltax_settler;
+
+GRANT UPDATE (
+    odds_at_off,
+    odds_at_off_observed_at,
+    selection_result,
+    result_flag,
+    result_settled_at,
+    result_source
+) ON TABLE deltax_alerts TO deltax_settler;
+
+COMMENT ON COLUMN deltax_alerts.selection_result IS
+    'W=win, L=loss, V=void, ?=unknown (e.g. quarter Asian), E=expired (outside settle window)';
 
 ----
 -- Verify (as deltax_writer):

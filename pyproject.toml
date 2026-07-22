@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 deltax-monitor = "deltax.monitor:main"
+deltax-settle = "deltax.settle.worker:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

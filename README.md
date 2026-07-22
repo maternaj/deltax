@@ -22,6 +22,7 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 | Suspended | Skip updates while `bettingEnabled=false`; resume when re-enabled |
 | Missing from feed | Soft TTL eviction (default 600s), not immediate delete |
 | DB | Alerts only — no interim odds storage |
+| Settlement | `deltax_settle` worker — results API, `odds_at_off`, W/L/V/?/E |
 | Telegram | Optional — empty `DELTAX_TELEGRAM_GROUPS` skips send, DB still records |
 
 ## Setup
@@ -39,6 +40,9 @@ cp .env.example .env   # edit DB + Telegram
 # 1. Writer role (postgres superuser)
 psql "postgresql://postgres@HOST:5432/postgres" -v ON_ERROR_STOP=1 -f sql/00_create_deltax_writer.sql
 
+# 1b. Settler role (postgres superuser)
+psql "postgresql://postgres@HOST:5432/postgres" -v ON_ERROR_STOP=1 -f sql/02_create_deltax_settler.sql
+
 # 2a. Fresh database — full bootstrap
 psql "postgresql://alex@HOST:5432/alex" -v ON_ERROR_STOP=1 -f sql/01_create_deltax_alerts.sql
 
@@ -47,10 +51,12 @@ chmod +x scripts/apply_migrations.sh
 ./scripts/apply_migrations.sh "postgresql://alex@HOST:5432/alex"
 
 # ALTER USER deltax_writer PASSWORD '…';
+# ALTER USER deltax_settler PASSWORD '…';
 ```
 
 Schema changes after the initial bootstrap go in `sql/migrations/` as numbered files
 (`002_…`, `003_…`). Each migration records itself in `deltax_schema_migrations`.
+Run `02_create_deltax_settler.sql` before migrations if the settler role is not created yet.
 
 ### Config
 
@@ -95,20 +101,50 @@ drop_tiers:
     drop_pct: 20
 ```
 
+Settlement worker (`deltax_settle`):
+
+```yaml
+settle:
+  sleep_seconds: 900
+  default_delay_hours: 6
+  max_age_days: 3
+  batch_match_limit: 50
+  match_request_delay_seconds: 5
+  market_delay_hours:
+    16-GOAL_SCORERS-1: 12   # exact my_selection_id only
+```
+
+Per-alert `selection_result`: `W` / `L` / `V` (void) / `?` (quarter Asian) / `E` (expired &gt;3 days).
+`odds_at_off` comes from the results API `cell.odd` (including `1.0`).
+
 ## Run
 
-Foreground:
+Monitor foreground:
 
 ```bash
 .venv/bin/python workers/deltax_monitor.py
 ```
 
+Settler foreground (one cycle):
+
+```bash
+.venv/bin/python workers/deltax_settle.py --once
+```
+
+Settler daemon:
+
+```bash
+.venv/bin/python workers/deltax_settle.py
+```
+
 VPS (nohup):
 
 ```bash
-chmod +x scripts/start_vps_worker.sh
+chmod +x scripts/start_vps_worker.sh scripts/start_vps_settle.sh
 ./scripts/start_vps_worker.sh start
+./scripts/start_vps_settle.sh start
 ./scripts/start_vps_worker.sh status
+./scripts/start_vps_settle.sh status
 ```
 
 ## Tests

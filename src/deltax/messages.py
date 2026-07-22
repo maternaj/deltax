@@ -185,6 +185,73 @@ def format_drop_delta(drop_pct: float, implied_drop_pct: float) -> str:
     return f"Δ -{drop_pct:.1f}%/-{implied_drop_pct:.1f}%"
 
 
+def _seconds_to_kickoff(date_start_ms: int, reference_ts: float) -> int:
+    kickoff_ts = date_start_ms / 1000.0
+    return int(kickoff_ts - reference_ts)
+
+
+def _format_countdown(total_seconds: int) -> str:
+    if total_seconds < 3600:
+        return f"T-{total_seconds // 60}m"
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    if days >= 7:
+        return f"T-{days}d"
+    if days >= 1:
+        if hours:
+            return f"T-{days}d {hours}h"
+        return f"T-{days}d"
+    if minutes:
+        return f"T-{hours}h {minutes}m"
+    return f"T-{hours}h"
+
+
+def _format_live_elapsed(total_seconds: int) -> str:
+    if total_seconds < 3600:
+        return f"LIVE +{total_seconds // 60}m"
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    if days >= 1:
+        if hours:
+            return f"LIVE +{days}d {hours}h"
+        return f"LIVE +{days}d"
+    if minutes:
+        return f"LIVE +{hours}h {minutes}m"
+    return f"LIVE +{hours}h"
+
+
+def format_time_to_kickoff(date_start_ms: int | None, reference_ts: float) -> str:
+    """Human-readable countdown or elapsed time; both instants compared in UTC."""
+    if not date_start_ms:
+        return "?"
+    seconds_to_ko = _seconds_to_kickoff(date_start_ms, reference_ts)
+    if seconds_to_ko < 0:
+        return _format_live_elapsed(abs(seconds_to_ko))
+    return _format_countdown(seconds_to_ko)
+
+
+def format_line4_timing(
+    date_start_ms: int | None,
+    reference_ts: float,
+    *,
+    drop_min: int,
+    drop_delta: str,
+) -> str:
+    kickoff = format_kickoff_prague(date_start_ms)
+    ttk = format_time_to_kickoff(date_start_ms, reference_ts)
+    tail = f"drop <b>{drop_min}</b> min · <b>{drop_delta}</b>"
+
+    if not date_start_ms:
+        return f"⏰ ? ({ttk}) · {tail}"
+
+    seconds_to_ko = _seconds_to_kickoff(date_start_ms, reference_ts)
+    if 0 < seconds_to_ko < 3600:
+        return f"⏰ {kickoff} · <b>🔜 {ttk}</b> · {tail}"
+    return f"⏰ {kickoff} (<b>{ttk}</b>) · {tail}"
+
+
 def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
@@ -202,8 +269,10 @@ def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
         f"<b>{escape(row.opp_name)} @ {hit.odds_now:.2f}</b> "
         f"(<s>{hit.odds_previous:.2f}</s>↓)"
     )
-    line4 = (
-        f"⏰ {format_kickoff_prague(row.date_start)} · "
-        f"drop <b>{drop_min}</b> min · <b>{drop_delta}</b>"
+    line4 = format_line4_timing(
+        row.date_start,
+        hit.current_observed_at,
+        drop_min=drop_min,
+        drop_delta=drop_delta,
     )
     return "\n".join((line1, line2, line3, line4))

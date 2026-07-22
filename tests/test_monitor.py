@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from deltax.config import AppConfig, DropTier, load_config
+from deltax.config import AppConfig, DropTier, SettleConfig, load_config
 from deltax.drop_detector import DropHit
 from deltax.markets import load_market_registry
 from deltax.monitor import DeltaXMonitor
@@ -26,6 +26,14 @@ def _config() -> AppConfig:
         drop_tiers=(DropTier(window_seconds=0, drop_pct=10),),
         match_url_base="https://www.tipsport.cz",
         default_alert_groups="A",
+        settle=SettleConfig(
+            sleep_seconds=900,
+            default_delay_hours=6,
+            max_age_days=3,
+            batch_match_limit=50,
+            match_request_delay_seconds=0,
+            market_delay_hours={},
+        ),
         config_path=Path("config.yaml"),
         market_registry=load_market_registry(raw, config_path=Path("config.yaml")),
     )

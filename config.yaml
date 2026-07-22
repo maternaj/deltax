@@ -2,6 +2,13 @@ tipsport:
   base_url: https://www.tipsport.cz
   endpoints:
   - /rest/external/offer/v1/matches?allEvents=false
+settle:
+  sleep_seconds: 900
+  default_delay_hours: 6
+  max_age_days: 3
+  batch_match_limit: 50
+  match_request_delay_seconds: 5
+  market_delay_hours: {}
 monitor:
   refresh_seconds: 30
   selection_ttl_seconds: 600
@@ -69,6 +76,7 @@ markets:
   - 16-WINNER_NWAY-a
   - 16-WINNER_PLAYERS-a
   - 169-WINNER_2W-0
+  - 18-WINNER_NWAY-a
   - 188-ASIAN_HANDICAP_2W_AWAY-m
   - 188-ASIAN_HANDICAP_2W_HOME-m
   - 188-ASIAN_TOTAL-1
@@ -107,6 +115,7 @@ markets:
   - 208-WINNING_AND_METHOD_END-1
   - 208-WINNING_METHOD-1
   - 23-POSITION_PLAYER-a
+  - 23-WINNER_3W-1
   - 25-GENERAL_QUESTION_TOTAL-a
   - 25-POSITION_PLAYER-a
   - 25-WINNER_NWAY-a
@@ -116,6 +125,7 @@ markets:
   - 27-WINNER_2W-0
   - 27-WINNER_3W-1
   - 27-WINNER_3W_DOUBLE_CHANCE-1
+  - 29-WINNER_3W-1
   - 31-ASIAN_HANDICAP_2W_AWAY-1
   - 31-ASIAN_HANDICAP_2W_HOME-1
   - 31-ASIAN_TOTAL-1
@@ -133,6 +143,7 @@ markets:
   - 40-TOTAL_PARTICIPANT-0
   - 40-WINNER_2W-1
   - 40-WINNER_2W-s
+  - 41-WINNER_3W-1
   - 42-ADVANCEMENT_PHASE_YES_NO-a
   - 42-ASIAN_HANDICAP_2W_AWAY-s
   - 42-ASIAN_HANDICAP_2W_HOME-s
@@ -251,6 +262,7 @@ markets:
   - 7-WINNER_OR_LEAD-1
   - 88-WINNER_2W-1
   - 88-WINNER_2W-s
+  - 92-WINNER_2W-0
   - GENERAL_QUESTION_YES_NO
   - SCORE_PENALTY
   - Xth_YELLOW_CARD

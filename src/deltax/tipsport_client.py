@@ -265,3 +265,6 @@ class TipsportClient:
             if attempt < self.max_retries:
                 exponential_backoff(attempt)
         return None
+
+    def fetch_match_results(self, match_id: int) -> dict[str, Any] | None:
+        return self.fetch(f"/rest/offer/v3/matches/{match_id}?fromResults=true")
