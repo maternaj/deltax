@@ -17,7 +17,7 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 | Drop tiers | OR across tiers; within each tier both `drop_pct` and `implied_drop_pct` must pass (0 = disabled) |
 | Dedup | One alert per `(match_id, my_selection_id)` — highest drop wins among selections with current odds at or below `max_odds` |
 | Max odds | Selections with current odds above `monitor.max_odds` (default 5.0) are excluded before template winner is chosen |
-| Markets | `wanted` and `pending` are monitored; `blacklisted` are ignored; unknown `my_selection_id` values auto-added to `pending` |
+| Markets | `wanted` and `pending` are monitored; `blacklisted` and `blacklisted_prefixes` are ignored; unknown `my_selection_id` values auto-added to `pending` |
 | Re-alert | Market disarmed only after DB persist; re-arms when alerted odds recover |
 | Suspended | Skip updates while `bettingEnabled=false`; resume when re-enabled |
 | Missing from feed | Soft TTL eviction (default 600s), not immediate delete |
@@ -85,6 +85,7 @@ markets:
   wanted: []      # full my_selection_id values, e.g. 16-WINNER_3W-1
   pending: []
   blacklisted: [] # e.g. 16-WINNER_3W-2 period templates
+  blacklisted_prefixes: [] # e.g. 11- ignores all markets for super-sport 11
 ```
 
 Unknown `my_selection_id` values discovered at runtime are appended to `markets.pending` in `config.yaml`.

@@ -2,6 +2,8 @@ tipsport:
   base_url: https://www.tipsport.cz
   endpoints:
   - /rest/external/offer/v1/matches?allEvents=false
+  - /rest/external/offer/v1/matches?idCompetition=120&allEvents=true
+  - /rest/external/offer/v1/matches?idCompetition=102&allEvents=true
 settle:
   sleep_seconds: 900
   default_delay_hours: 6
@@ -98,9 +100,11 @@ markets:
   - 188-WINNER_2W-1
   - 188-WINNER_2W-m
   - 188-WINNER_MAP_AND_TOTALS_ROUND-m
+  - 188-WINNER_NWAY-a
   - 188-WINNER_PISTOL_ROUND-m
   - 188-WINNER_PISTOL_ROUND_AND_WINNER_MAP-m
   - 188-WINNER_ROUND-m
+  - 2-WINNER_3W-1
   - 208-ASIAN_TOTAL-1
   - 208-END_IN_90_SECONDS-r
   - 208-FIGHT_OUTCOME_DECISION-1
@@ -125,6 +129,7 @@ markets:
   - 27-WINNER_2W-0
   - 27-WINNER_3W-1
   - 27-WINNER_3W_DOUBLE_CHANCE-1
+  - 28-WINNER_2W-1
   - 29-WINNER_3W-1
   - 31-ASIAN_HANDICAP_2W_AWAY-1
   - 31-ASIAN_HANDICAP_2W_HOME-1
@@ -195,6 +200,7 @@ markets:
   - 456-WINNER_3W-2
   - 456-WINNER_3W_DOUBLE_CHANCE-1
   - 456-WINNER_3W_DOUBLE_CHANCE-2
+  - 46-WINNER_NWAY-a
   - 47-ASIAN_HANDICAP_2W_AWAY-1
   - 47-ASIAN_HANDICAP_2W_HOME-1
   - 47-ASIAN_TOTAL-1
@@ -205,8 +211,6 @@ markets:
   - 47-WINNER_2W-1
   - 47-WINNER_2W-s
   - 47-WINNER_OR_LEAD-w
-  - 49-POSITION-a
-  - 49-WINNER_NWAY-a
   - 6-ASIAN_HANDICAP_2W_AWAY-0
   - 6-ASIAN_HANDICAP_2W_AWAY-2
   - 6-ASIAN_HANDICAP_2W_HOME-0
@@ -444,3 +448,5 @@ markets:
   - 16-Xth_RED_CARD-2
   - 16-YELLOW_CARDS_PLAYER-1
   - 16-YELLOW_CARDS_PLAYER-2
+  blacklisted_prefixes:
+  - 49-

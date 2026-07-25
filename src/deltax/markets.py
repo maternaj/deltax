@@ -19,19 +19,26 @@ class MarketRegistry:
     wanted: set[str] = field(default_factory=set)
     pending: set[str] = field(default_factory=set)
     blacklisted: set[str] = field(default_factory=set)
+    blacklisted_prefixes: tuple[str, ...] = field(default_factory=tuple)
     config_path: Path | None = None
     _raw_config: dict[str, Any] = field(default_factory=dict, repr=False)
     _new_this_session: set[str] = field(default_factory=set, repr=False)
 
+    def is_blacklisted(self, my_selection_id: str) -> bool:
+        """True when my_selection_id matches an exact or prefix blacklist entry."""
+        if my_selection_id in self.blacklisted:
+            return True
+        return any(my_selection_id.startswith(prefix) for prefix in self.blacklisted_prefixes)
+
     def should_process(self, my_selection_id: str) -> bool:
         """Wanted and pending templates are processed; blacklisted are ignored."""
-        return my_selection_id not in self.blacklisted
+        return not self.is_blacklisted(my_selection_id)
 
     def register_seen(self, my_selection_id: str) -> None:
         """Add unknown my_selection_id values to pending and persist to config.yaml."""
         if not my_selection_id:
             return
-        if my_selection_id in self.wanted or my_selection_id in self.blacklisted:
+        if my_selection_id in self.wanted or self.is_blacklisted(my_selection_id):
             return
         if my_selection_id in self.pending:
             return
@@ -71,6 +78,23 @@ def _parse_market_list(raw: dict[str, Any], key: str) -> set[str]:
     return {str(item) for item in values if item}
 
 
+def _parse_blacklisted_prefixes(raw: dict[str, Any]) -> tuple[str, ...]:
+    values = raw.get("blacklisted_prefixes") or []
+    if not isinstance(values, list):
+        raise ValueError("markets.blacklisted_prefixes must be a list")
+    prefixes = {str(item).strip() for item in values if str(item).strip()}
+    return tuple(sorted(prefixes))
+
+
+def _blacklist_conflicts(
+    ids: set[str],
+    *,
+    blacklisted: set[str],
+    blacklisted_prefixes: tuple[str, ...],
+) -> set[str]:
+    return {item for item in ids if item in blacklisted or any(item.startswith(p) for p in blacklisted_prefixes)}
+
+
 def load_market_registry(
     raw: dict[str, Any],
     *,
@@ -83,15 +107,28 @@ def load_market_registry(
     wanted = _parse_market_list(markets, "wanted")
     pending = _parse_market_list(markets, "pending")
     blacklisted = _parse_market_list(markets, "blacklisted")
+    blacklisted_prefixes = _parse_blacklisted_prefixes(markets)
 
     overlap = (wanted & blacklisted) | (wanted & pending) | (pending & blacklisted)
     if overlap:
         raise ValueError(f"my_selection_id appears in multiple lists: {sorted(overlap)}")
 
+    prefix_overlap = _blacklist_conflicts(
+        wanted | pending,
+        blacklisted=blacklisted,
+        blacklisted_prefixes=blacklisted_prefixes,
+    )
+    if prefix_overlap:
+        raise ValueError(
+            "my_selection_id in wanted/pending matches markets.blacklisted_prefixes: "
+            f"{sorted(prefix_overlap)}"
+        )
+
     return MarketRegistry(
         wanted=wanted,
         pending=pending,
         blacklisted=blacklisted,
+        blacklisted_prefixes=blacklisted_prefixes,
         config_path=config_path,
         _raw_config=raw,
     )

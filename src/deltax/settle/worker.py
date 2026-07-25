@@ -267,8 +267,11 @@ class DeltaXSettle:
             elapsed = time.monotonic() - started
             sleep_for = max(settle.sleep_seconds - elapsed, 1.0)
             deadline = time.monotonic() + sleep_for
-            while self.running and time.monotonic() < deadline:
-                time.sleep(min(1.0, deadline - time.monotonic()))
+            while self.running:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
 
 
 def main() -> None:

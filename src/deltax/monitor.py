@@ -267,7 +267,7 @@ class DeltaXMonitor:
     def run_forever(self) -> None:
         logger.info(
             "DeltaX monitor started endpoints=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
-            "markets wanted=%d pending=%d blacklisted=%d",
+            "markets wanted=%d pending=%d blacklisted=%d blacklisted_prefixes=%d",
             list(self.config.tipsport_endpoints),
             self.config.refresh_seconds,
             self.config.max_odds,
@@ -276,6 +276,7 @@ class DeltaXMonitor:
             len(self.config.market_registry.wanted),
             len(self.config.market_registry.pending),
             len(self.config.market_registry.blacklisted),
+            len(self.config.market_registry.blacklisted_prefixes),
         )
         while self.runtime.running:
             started = time.monotonic()
@@ -296,8 +297,11 @@ class DeltaXMonitor:
             elapsed = time.monotonic() - started
             sleep_for = max(self.config.refresh_seconds - elapsed, 1.0)
             deadline = time.monotonic() + sleep_for
-            while self.runtime.running and time.monotonic() < deadline:
-                time.sleep(min(1.0, deadline - time.monotonic()))
+            while self.runtime.running:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
 
 
 def main() -> None:
