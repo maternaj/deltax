@@ -170,6 +170,27 @@ def test_realert_after_recovery() -> None:
     assert len(hits2) == 1
 
 
+def test_market_picks_highest_implied_drop_not_odds_ratio() -> None:
+    """When odds-ratio drop differs from implied shift, implied wins."""
+    store = MonitorStore()
+    longshot = SelectionState(row=_row(opp_id=1, opp_name="Long", odd=4.0))
+    fav = SelectionState(row=_row(opp_id=2, opp_name="Fav", odd=2.0))
+    store.selections[1] = longshot
+    store.selections[2] = fav
+    update_selection_state(store, longshot, _row(opp_id=1, odd=4.0), now_ts=0.0, max_window_seconds=600)
+    update_selection_state(store, fav, _row(opp_id=2, odd=2.0), now_ts=0.0, max_window_seconds=600)
+    update_selection_state(store, longshot, _row(opp_id=1, odd=3.2), now_ts=30.0, max_window_seconds=600)
+    update_selection_state(store, fav, _row(opp_id=2, odd=1.7), now_ts=30.0, max_window_seconds=600)
+
+    hits = pick_market_alerts(store, now_ts=30.0, tiers=TIERS, max_odds=0.0)
+    assert len(hits) == 1
+    assert hits[0].opp_id == 2
+    assert hits[0].drop_pct == pytest.approx(15.0)
+    assert hits[0].implied_drop_pct == pytest.approx(8.82, abs=0.1)
+    assert compute_drop_pct(4.0, 3.2) > hits[0].drop_pct
+    assert compute_implied_drop_pct(4.0, 3.2) < hits[0].implied_drop_pct
+
+
 def test_market_picks_highest_drop() -> None:
     store = MonitorStore()
     home = SelectionState(row=_row(opp_id=1, opp_name="Home", odd=2.0))

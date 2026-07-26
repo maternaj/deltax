@@ -146,7 +146,7 @@ def evaluate_selection(
             tier=tier,
             row=state.row,
         )
-        if best is None or hit.drop_pct > best.drop_pct:
+        if best is None or hit.implied_drop_pct > best.implied_drop_pct:
             best = hit
     return best
 
@@ -256,7 +256,7 @@ def pick_market_alerts(
             continue
         key = hit.match_id, hit.my_selection_id
         existing = best_by_market.get(key)
-        if existing is None or hit.drop_pct > existing.drop_pct:
+        if existing is None or hit.implied_drop_pct > existing.implied_drop_pct:
             best_by_market[key] = hit
     store.changed_opp_ids.clear()
     return list(best_by_market.values())
