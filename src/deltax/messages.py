@@ -252,14 +252,25 @@ def format_line4_timing(
     return f"⏰ {kickoff} (<b>{ttk}</b>) · {tail}"
 
 
-def format_drop_alert_message(hit: DropHit, *, match_url_base: str) -> str:
+BOOKMAKER_TAGS: dict[str, str] = {
+    "tipsport": "TIPS",
+    "pinnacle": "PINN",
+}
+
+
+def bookmaker_tag(source: str) -> str:
+    return BOOKMAKER_TAGS.get(str(source or "").strip().lower(), str(source or "?").upper()[:4])
+
+
+def format_drop_alert_message(hit: DropHit, *, match_url_base: str, source: str = "tipsport") -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
     match_link = f'<a href="{escape(url, quote=True)}">{escape(row.match_name)}</a>'
     drop_delta = format_drop_delta(hit.drop_pct, hit.implied_drop_pct)
     drop_min = drop_window_minutes(hit.baseline_observed_at, hit.current_observed_at)
+    tag = bookmaker_tag(source)
 
-    line1 = f"{sport_emoji(row.super_sport_name)} <b>{escape(row.competition_name)}</b>"
+    line1 = f"[{tag}] {sport_emoji(row.super_sport_name)} <b>{escape(row.competition_name)}</b>"
     line2 = (
         f"{match_phase_emoji(row.match_type)} "
         f"{match_link}, <b>{escape(row.event_name)}</b>"

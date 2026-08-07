@@ -3,6 +3,7 @@
 from deltax.config import DropTier
 from deltax.drop_detector import DropHit
 from deltax.messages import (
+    bookmaker_tag,
     drop_window_minutes,
     format_drop_alert_message,
     format_kickoff_prague,
@@ -204,6 +205,11 @@ def test_format_line4_timing_layouts() -> None:
     assert missing == f"⏰ ? (?) · {tail}"
 
 
+def test_bookmaker_tag() -> None:
+    assert bookmaker_tag("tipsport") == "TIPS"
+    assert bookmaker_tag("pinnacle") == "PINN"
+
+
 def test_format_drop_alert_message_four_line_layout() -> None:
     row = _tracked()
     hit = _drop_hit(
@@ -211,11 +217,15 @@ def test_format_drop_alert_message_four_line_layout() -> None:
         baseline_observed_at=KICKOFF_TS - 8280,
         current_observed_at=KICKOFF_TS - 8100,
     )
-    msg = format_drop_alert_message(hit, match_url_base="https://www.tipsport.cz")
+    msg = format_drop_alert_message(
+        hit,
+        match_url_base="https://www.tipsport.cz",
+        source="tipsport",
+    )
     lines = msg.splitlines()
 
     assert len(lines) == 4
-    assert lines[0] == "⚽ <b>Premier League</b>"
+    assert lines[0] == "[TIPS] ⚽ <b>Premier League</b>"
     assert lines[1] == (
         '🔵 <a href="https://www.tipsport.cz/kurzy/zapas/arsenal-chelsea/8302416">'
         "Arsenal - Chelsea</a>, <b>Celkový počet gólů hráče</b>"
@@ -227,6 +237,21 @@ def test_format_drop_alert_message_four_line_layout() -> None:
     assert lines[3].startswith("⏰ ")
     assert "(<b>T-2h 15m</b>)" in lines[3]
     assert "drop <b>3</b> min · <b>Δ -10.0%/-5.2%</b>" in lines[3]
+
+
+def test_format_drop_alert_message_pinnacle_source() -> None:
+    row = _tracked(
+        super_sport_name="Soccer",
+        competition_name="England - Premier League",
+        match_url="https://www.pinnacle.com/en/soccer/match/123",
+    )
+    hit = _drop_hit(row)
+    msg = format_drop_alert_message(
+        hit,
+        match_url_base="https://www.pinnacle.com/en/soccer/match/{event_id}",
+        source="pinnacle",
+    )
+    assert msg.splitlines()[0] == "[PINN] ⚽ <b>England - Premier League</b>"
 
 
 def test_parse_telegram_groups() -> None:

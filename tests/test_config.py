@@ -87,3 +87,32 @@ def test_load_config_excluded_event_name_substrings(tmp_path: Path) -> None:
     )
     config = load_config(env={"DELTAX_CONFIG_PATH": str(config_path)})
     assert config.excluded_event_name_substrings == ("ITF", "Test")
+
+
+def test_load_pinnacle_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.pinnacle.yaml"
+    config_path.write_text(
+        yaml.dump(
+            {
+                "source": "pinnacle",
+                "pinnacle": {
+                    "sports": [{"sport_id": 29, "market_kinds": [0, 1]}],
+                    "prematch_only": True,
+                },
+                "drop_tiers": [{"window_seconds": 0, "drop_pct": 10}],
+                "markets": {
+                    "wanted": ["29-0-MONEYLINE-HOME"],
+                    "pending": [],
+                    "blacklisted": [],
+                    "blacklisted_prefixes": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(env={"DELTAX_CONFIG_PATH": str(config_path)})
+    assert config.source == "pinnacle"
+    assert config.pinnacle is not None
+    assert config.pinnacle.sports[0].sport_id == 29
+    assert config.pinnacle.sports[0].market_kinds == (0, 1)
+    assert config.tipsport_endpoints == ()

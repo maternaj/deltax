@@ -35,7 +35,7 @@ class MarketRegistry:
         return not self.is_blacklisted(my_selection_id)
 
     def register_seen(self, my_selection_id: str) -> None:
-        """Add unknown my_selection_id values to pending and persist to config.yaml."""
+        """Add unknown my_selection_id values to pending and persist to the active config file."""
         if not my_selection_id:
             return
         if my_selection_id in self.wanted or self.is_blacklisted(my_selection_id):

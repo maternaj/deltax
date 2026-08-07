@@ -24,9 +24,9 @@ from deltax.db import (
 )
 from deltax.markets import event_name_excluded
 from deltax.messages import format_drop_alert_message, format_match_url
-from deltax.parser import SelectionRow, tracked_from_row, tipsport_snapshot_from_tracked, parse_selections
+from deltax.parser import SelectionRow, tracked_from_row, tipsport_snapshot_from_tracked
+from deltax.sources import OddsSource, build_odds_source
 from deltax.telegram import TelegramSender, parse_telegram_groups, resolve_alert_groups, telegram_enabled
-from deltax.tipsport_client import TipsportClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +55,13 @@ class DeltaXMonitor:
         self,
         config: AppConfig,
         *,
-        client: TipsportClient | None = None,
+        source: OddsSource | None = None,
         env: dict[str, str] | None = None,
         telegram: TelegramSender | None = None,
     ):
         self.config = config
         self.env = env or dict(os.environ)
-        self.client = client or TipsportClient(config.tipsport_base_url)
+        self.source = source or build_odds_source(config)
         self.runtime = MonitorRuntime()
         self.telegram = telegram or TelegramSender()
         self._telegram_enabled = telegram_enabled(self.env)
@@ -76,7 +76,7 @@ class DeltaXMonitor:
     def stop(self) -> None:
         self.runtime.running = False
         self.telegram.close()
-        self.client.close()
+        self.source.close()
 
     def validate_startup(self) -> None:
         validate_connection(self.env)
@@ -137,7 +137,11 @@ class DeltaXMonitor:
 
         sent = 0
         for hit in hits:
-            message = format_drop_alert_message(hit, match_url_base=self.config.match_url_base)
+            message = format_drop_alert_message(
+                hit,
+                match_url_base=self.config.match_url_base,
+                source=self.config.source,
+            )
             match_url = format_match_url(self.config.match_url_base, hit.row.match_url)
 
             alert_id = self._persist_alert(hit, message, match_url)
@@ -242,21 +246,11 @@ class DeltaXMonitor:
         except psycopg.Error:
             logger.exception("Failed to update telegram status for alert_id=%s", alert_id)
 
-    def run_cycle(self) -> dict[str, int | bool]:
-        rows: list[SelectionRow] = []
-        failed_endpoints = 0
-        for endpoint in self.config.tipsport_endpoints:
-            payload = self.client.fetch(endpoint)
-            if payload is None:
-                failed_endpoints += 1
-                logger.error("Tipsport fetch failed for endpoint=%s", endpoint)
-                continue
-            rows.extend(parse_selections(payload))
-            del payload
-
-        if failed_endpoints == len(self.config.tipsport_endpoints):
+    def run_cycle(self) -> dict[str, int | bool | str]:
+        rows, fetch_ok = self.source.fetch_selections()
+        if not fetch_ok:
             rows.clear()
-            return {"ok": False, "selections": 0, "alerts": 0}
+            return {"ok": False, "selections": 0, "alerts": 0, "source": self.config.source}
 
         now_ts = time.time()
         changed = self.ingest_rows(rows, now_ts=now_ts)
@@ -270,16 +264,15 @@ class DeltaXMonitor:
             "markets": len(self.runtime.store.markets),
             "changed": changed,
             "alerts": alerts,
-            "endpoints_ok": len(self.config.tipsport_endpoints) - failed_endpoints,
-            "endpoints_failed": failed_endpoints,
+            "source": self.config.source,
         }
 
     def run_forever(self) -> None:
         logger.info(
-            "DeltaX monitor started endpoints=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
+            "DeltaX monitor started source=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
             "markets wanted=%d pending=%d blacklisted=%d blacklisted_prefixes=%d "
             "excluded_event_name_substrings=%d",
-            list(self.config.tipsport_endpoints),
+            self.config.source,
             self.config.refresh_seconds,
             self.config.max_odds,
             [(t.window_seconds, t.drop_pct) for t in self.config.drop_tiers],
@@ -290,22 +283,28 @@ class DeltaXMonitor:
             len(self.config.market_registry.blacklisted_prefixes),
             len(self.config.excluded_event_name_substrings),
         )
+        if self.config.source == "tipsport":
+            logger.info("Tipsport endpoints=%s", list(self.config.tipsport_endpoints))
+        elif self.config.pinnacle is not None:
+            logger.info(
+                "Pinnacle sports=%s",
+                [(s.sport_id, s.market_kinds) for s in self.config.pinnacle.sports],
+            )
         while self.runtime.running:
             started = time.monotonic()
             stats = self.run_cycle()
             if stats.get("ok"):
                 logger.info(
-                    "Cycle OK selections=%s tracked=%s markets=%s changed=%s alerts=%s endpoints_ok=%s endpoints_failed=%s",
+                    "Cycle OK source=%s selections=%s tracked=%s markets=%s changed=%s alerts=%s",
+                    stats.get("source"),
                     stats.get("selections"),
                     stats.get("tracked"),
                     stats.get("markets"),
                     stats.get("changed"),
                     stats.get("alerts"),
-                    stats.get("endpoints_ok"),
-                    stats.get("endpoints_failed"),
                 )
             else:
-                logger.error("Cycle failed — Tipsport fetch returned no data")
+                logger.error("Cycle failed — %s fetch returned no data", stats.get("source"))
 
             elapsed = time.monotonic() - started
             sleep_for = max(self.config.refresh_seconds - elapsed, 1.0)
@@ -317,7 +316,13 @@ class DeltaXMonitor:
                 time.sleep(min(1.0, remaining))
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="DeltaX prematch odds drop monitor")
+    parser.add_argument("--once", action="store_true", help="run a single cycle and exit")
+    args = parser.parse_args(argv)
+
     load_env()
     setup_logging()
     config = load_config()
@@ -327,6 +332,12 @@ def main() -> None:
     except (DatabaseError, psycopg.Error, ValueError) as exc:
         logger.error("Startup validation failed: %s", exc)
         raise SystemExit(1) from exc
+
+    if args.once:
+        stats = monitor.run_cycle()
+        logger.info("Single cycle result: %s", stats)
+        monitor.stop()
+        raise SystemExit(0 if stats.get("ok") else 1)
 
     def _handle_signal(_signum, _frame) -> None:
         logger.info("Shutdown signal received")

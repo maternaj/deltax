@@ -1,0 +1,57 @@
+source: pinnacle
+
+pinnacle:
+  prematch_only: true
+  main_lines_only: true
+  period_keys:
+    - "0"
+  fresh_attempts: 3
+  max_origin_age_seconds: 5.0
+  sports:
+    - sport_id: 29
+      name: soccer
+      market_kinds:
+        - 0
+        - 1
+
+monitor:
+  refresh_seconds: 30
+  selection_ttl_seconds: 600
+  max_odds: 5.0
+  excluded_event_name_substrings: []
+
+drop_tiers:
+  - window_seconds: 0
+    drop_pct: 0
+    implied_drop_pct: 4
+  - window_seconds: 180
+    drop_pct: 0
+    implied_drop_pct: 5
+  - window_seconds: 300
+    drop_pct: 0
+    implied_drop_pct: 8
+
+telegram:
+  match_url_base: https://www.pinnacle.com/en/soccer/match/{event_id}
+  default_alert_groups: A
+
+markets:
+  wanted:
+    - 29-0-MONEYLINE-HOME
+    - 29-0-MONEYLINE-AWAY
+    - 29-0-MONEYLINE-DRAW
+    - 29-0-SPREAD-HOME
+    - 29-0-SPREAD-AWAY
+    - 29-0-TOTAL-OVER
+    - 29-0-TOTAL-UNDER
+  pending: []
+  blacklisted: []
+  blacklisted_prefixes: []
+
+settle:
+  sleep_seconds: 900
+  default_delay_hours: 6
+  max_age_days: 3
+  batch_match_limit: 50
+  match_request_delay_seconds: 5
+  market_delay_hours: {}

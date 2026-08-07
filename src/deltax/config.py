@@ -1,4 +1,4 @@
-"""Load config.yaml and environment overrides."""
+"""Load config.tipsport.yaml / config.pinnacle.yaml and environment overrides."""
 
 from __future__ import annotations
 
@@ -34,7 +34,32 @@ class SettleConfig:
 
 
 @dataclass(frozen=True)
+class PinnacleSportConfig:
+    sport_id: int
+    name: str
+    market_kinds: tuple[int, ...]
+    league_allowlist: tuple[int, ...] = ()
+    league_blocklist: tuple[int, ...] = ()
+    league_allow_name_substrings: tuple[str, ...] = ()
+    league_block_name_substrings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PinnacleConfig:
+    origins: tuple[str, ...]
+    sports: tuple[PinnacleSportConfig, ...]
+    prematch_only: bool
+    main_lines_only: bool
+    period_keys: tuple[str, ...]
+    fresh_attempts: int
+    max_origin_age_seconds: float
+    league_allowlist: tuple[int, ...]
+    league_blocklist: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class AppConfig:
+    source: str
     tipsport_base_url: str
     tipsport_endpoints: tuple[str, ...]
     refresh_seconds: int
@@ -47,13 +72,19 @@ class AppConfig:
     settle: SettleConfig
     config_path: Path
     market_registry: MarketRegistry
+    pinnacle: PinnacleConfig | None = None
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _parse_tipsport_endpoints(tipsport: dict[str, Any], env: dict[str, str]) -> tuple[str, ...]:
+def _parse_tipsport_endpoints(
+    tipsport: dict[str, Any],
+    env: dict[str, str],
+    *,
+    required: bool,
+) -> tuple[str, ...]:
     """Resolve Tipsport feed paths from endpoints list or legacy endpoint string."""
     env_raw = (env.get("DELTAX_TIPSPORT_ENDPOINTS") or "").strip()
     if env_raw:
@@ -68,9 +99,94 @@ def _parse_tipsport_endpoints(tipsport: dict[str, Any], env: dict[str, str]) -> 
             single = str(tipsport.get("endpoint") or "").strip()
             endpoints = [single] if single else []
 
-    if not endpoints:
+    if required and not endpoints:
         raise ValueError("tipsport.endpoints (or legacy tipsport.endpoint) must be set")
     return tuple(endpoints)
+
+
+def _parse_int_tuple(values: Any) -> tuple[int, ...]:
+    if not values:
+        return ()
+    if not isinstance(values, list):
+        raise ValueError("expected a list of integers")
+    return tuple(int(item) for item in values)
+
+
+def _parse_str_tuple(values: Any) -> tuple[str, ...]:
+    if not values:
+        return ()
+    if not isinstance(values, list):
+        raise ValueError("expected a list of strings")
+    return tuple(str(item) for item in values if str(item))
+
+
+def _parse_pinnacle_config(raw: dict[str, Any], env: dict[str, str]) -> PinnacleConfig | None:
+    pinnacle = raw.get("pinnacle")
+    if not pinnacle:
+        return None
+
+    from deltax.pinnacle.protocol import PA_ORIGINS
+
+    origins_raw = env.get("DELTAX_PINNACLE_ORIGINS") or pinnacle.get("origins")
+    if origins_raw:
+        if isinstance(origins_raw, str):
+            origins = tuple(part.strip() for part in origins_raw.split(",") if part.strip())
+        else:
+            origins = tuple(str(item).strip() for item in origins_raw if str(item).strip())
+    else:
+        origins = PA_ORIGINS
+
+    sports_cfg: list[PinnacleSportConfig] = []
+    for row in pinnacle.get("sports") or []:
+        sport_id = int(row["sport_id"])
+        name = str(row.get("name") or sport_id)
+        market_kinds = _parse_int_tuple(row.get("market_kinds") or [0, 1])
+        for mk in market_kinds:
+            if mk not in {0, 1, 2, 3}:
+                raise ValueError(f"pinnacle sport {sport_id} has invalid market_kind {mk}")
+            if mk in {2, 3}:
+                raise ValueError(
+                    f"pinnacle sport {sport_id} market_kind {mk} is not allowed for prematch-only monitoring"
+                )
+        sports_cfg.append(
+            PinnacleSportConfig(
+                sport_id=sport_id,
+                name=name,
+                market_kinds=market_kinds or (0, 1),
+                league_allowlist=_parse_int_tuple(row.get("league_allowlist")),
+                league_blocklist=_parse_int_tuple(row.get("league_blocklist")),
+                league_allow_name_substrings=_parse_str_tuple(row.get("league_allow_name_substrings")),
+                league_block_name_substrings=_parse_str_tuple(row.get("league_block_name_substrings")),
+            )
+        )
+    if not sports_cfg:
+        raise ValueError("pinnacle.sports must contain at least one sport")
+
+    fresh_attempts = int(
+        env.get("DELTAX_PINNACLE_FRESH_ATTEMPTS") or pinnacle.get("fresh_attempts") or 3
+    )
+    if fresh_attempts < 1:
+        raise ValueError("pinnacle.fresh_attempts must be >= 1")
+
+    max_origin_age_seconds = float(
+        env.get("DELTAX_PINNACLE_MAX_ORIGIN_AGE_SECONDS")
+        or pinnacle.get("max_origin_age_seconds")
+        or 5.0
+    )
+    if max_origin_age_seconds <= 0:
+        raise ValueError("pinnacle.max_origin_age_seconds must be > 0")
+
+    return PinnacleConfig(
+        origins=origins,
+        sports=tuple(sports_cfg),
+        prematch_only=bool(pinnacle.get("prematch_only", True)),
+        main_lines_only=bool(pinnacle.get("main_lines_only", True)),
+        period_keys=_parse_str_tuple(pinnacle.get("period_keys") or ["0"]) or ("0",),
+        fresh_attempts=fresh_attempts,
+        max_origin_age_seconds=max_origin_age_seconds,
+        league_allowlist=_parse_int_tuple(pinnacle.get("league_allowlist")),
+        league_blocklist=_parse_int_tuple(pinnacle.get("league_blocklist")),
+    )
 
 
 def _parse_settle_config(settle: dict[str, Any], env: dict[str, str]) -> SettleConfig:
@@ -130,7 +246,7 @@ def _parse_excluded_event_name_substrings(monitor: dict[str, Any]) -> tuple[str,
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
     env = env or dict(os.environ)
     root = _project_root()
-    config_path = Path(env.get("DELTAX_CONFIG_PATH") or root / "config.yaml")
+    config_path = Path(env.get("DELTAX_CONFIG_PATH") or root / "config.tipsport.yaml")
     if not config_path.is_file():
         raise ValueError(f"Config file not found: {config_path}")
 
@@ -179,10 +295,21 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
 
     excluded_event_name_substrings = _parse_excluded_event_name_substrings(monitor)
     market_registry = load_market_registry(raw, config_path=config_path)
+    source = str(env.get("DELTAX_SOURCE") or raw.get("source") or "tipsport").strip().lower()
+    if source not in {"tipsport", "pinnacle"}:
+        raise ValueError("source must be 'tipsport' or 'pinnacle'")
+    pinnacle_config = _parse_pinnacle_config(raw, env) if source == "pinnacle" or raw.get("pinnacle") else None
+    if source == "pinnacle" and pinnacle_config is None:
+        raise ValueError("source=pinnacle requires a pinnacle section in config")
 
     return AppConfig(
+        source=source,
         tipsport_base_url=str(tipsport.get("base_url") or "https://www.tipsport.cz").rstrip("/"),
-        tipsport_endpoints=_parse_tipsport_endpoints(tipsport, env),
+        tipsport_endpoints=_parse_tipsport_endpoints(
+            tipsport,
+            env,
+            required=source == "tipsport",
+        ),
         refresh_seconds=refresh,
         selection_ttl_seconds=selection_ttl,
         max_odds=max_odds,
@@ -195,6 +322,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         settle=settle,
         config_path=config_path,
         market_registry=market_registry,
+        pinnacle=pinnacle_config,
     )
 
 

@@ -1,3 +1,5 @@
+source: tipsport
+
 tipsport:
   base_url: https://www.tipsport.cz
   endpoints:
