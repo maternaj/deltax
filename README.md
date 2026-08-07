@@ -28,7 +28,7 @@ All Tipsport client code lives in this repo — no runtime imports from optagame
 ## Setup
 
 ```bash
-cd ~/optagame/deltax
+cd ~/deltax
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 cp .env.example .env   # edit DB + Telegram
