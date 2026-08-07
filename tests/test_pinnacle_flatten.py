@@ -40,9 +40,9 @@ def test_flatten_prematch_main_lines() -> None:
     assert rows[0].match_type == "PREMATCH"
     assert rows[0].tipsport_snapshot["source"] == "pinnacle"
     assert rows[0].match_url.startswith(
-        "https://www.ps3838.com/en/sports/soccer/stats/England-Premier-League/"
+        "https://www.ps3838.com/en/sports/soccer/matchup/England-Premier-League/"
     )
-    assert rows[0].match_url.endswith("/999001")
+    assert rows[0].match_url.endswith("/1980/999001")
 
 
 def test_flatten_skips_live_section_events() -> None:

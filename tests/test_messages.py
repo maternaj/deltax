@@ -165,7 +165,7 @@ KICKOFF_TS = KICKOFF_MS / 1000.0
 
 
 def test_format_time_to_kickoff_countdown_and_live() -> None:
-    assert format_time_to_kickoff(None, KICKOFF_TS) == "?"
+    assert format_time_to_kickoff(None, KICKOFF_TS) == "n/a"
     assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 8100) == "T-2h 15m"
     assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 2700) == "T-45m"
     assert format_time_to_kickoff(KICKOFF_MS, KICKOFF_TS - 90000) == "T-1d 1h"
@@ -202,7 +202,7 @@ def test_format_line4_timing_layouts() -> None:
     assert live == f"⏰ {kickoff} (<b>LIVE +12m</b>) · {tail}"
 
     missing = format_line4_timing(None, KICKOFF_TS, drop_min=3, drop_delta="Δ -10.0%/-5.2%")
-    assert missing == f"⏰ ? (?) · {tail}"
+    assert missing == f"⏰ n/a (n/a) · {tail}"
 
 
 def test_bookmaker_tag() -> None:
@@ -228,7 +228,7 @@ def test_format_drop_alert_message_four_line_layout() -> None:
     assert lines[0] == "[TIPS] ⚽ <b>Premier League</b>"
     assert lines[1] == (
         '🔵 <a href="https://www.tipsport.cz/kurzy/zapas/arsenal-chelsea/8302416">'
-        "Arsenal - Chelsea</a>, <b>Celkový počet gólů hráče</b>"
+        "Arsenal - Chelsea</a> · <b>Celkový počet gólů hráče</b>"
     )
     assert (
         lines[2]
@@ -244,8 +244,8 @@ def test_format_drop_alert_message_pinnacle_source() -> None:
         super_sport_name="Soccer",
         competition_name="England - Premier League",
         match_url=(
-            "https://www.ps3838.com/en/sports/soccer/stats/"
-            "England-Premier-League/Arsenal-vs-Chelsea/999001"
+            "https://www.ps3838.com/en/sports/soccer/matchup/"
+            "England-Premier-League/Arsenal-vs-Chelsea/1980/999001"
         ),
     )
     hit = _drop_hit(row)
@@ -255,6 +255,8 @@ def test_format_drop_alert_message_pinnacle_source() -> None:
         source="pinnacle",
     )
     assert msg.splitlines()[0] == "[PINN] ⚽ <b>England - Premier League</b>"
+    assert 'href="https://www.ps3838.com/en/sports/soccer/matchup/' in msg
+    assert "?" not in msg.split('href="', 1)[1].split('"', 1)[0]
 
 
 def test_parse_telegram_groups() -> None:

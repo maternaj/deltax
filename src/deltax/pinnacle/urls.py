@@ -30,7 +30,7 @@ def slugify(text: str) -> str:
 def build_event_slug(home: str, away: str, *, style: str) -> str:
     home = strip_participant_suffix(home)
     away = strip_participant_suffix(away)
-    if style == "stats":
+    if style in {"matchup", "stats"}:
         return ps3838_path_slug(f"{home} vs {away}")
     return slugify(f"{home}-vs-{away}")
 
@@ -53,7 +53,7 @@ def sport_slug(sport: dict[str, Any], *, overrides: dict[int, str] | None = None
 def detect_match_url_style(match_url_base: str) -> str:
     lowered = (match_url_base or "").casefold()
     if "ps3838" in lowered:
-        return "stats"
+        return "matchup"
     if "/compact" in lowered:
         return "compact_matchup"
     return "classic"
@@ -70,10 +70,13 @@ def build_match_url(
 ) -> str:
     """Return a bookmaker event deeplink.
 
-    stats (PS3838 default web):
+    matchup (PS3838 default web):
+      /en/sports/{sport}/matchup/{league}/{home-vs-away}/{league_id}/{event_id}
+
+    stats (PS3838 stats tab):
       /en/sports/{sport}/stats/{league}/{home-vs-away}/{event_id}
 
-    compact_matchup (PS3838 compact — often blank in B2B):
+    compact_matchup (PS3838 compact view):
       /en/compact/sports/{sport}/matchup/{league}/{teams}/{league_id}/{event_id}
 
     classic (pinnacle.com):
@@ -91,14 +94,18 @@ def build_match_url(
         else str(event_id)
     )
 
-    if resolved_style == "stats":
+    if resolved_style in {"matchup", "stats"}:
         league_slug = ps3838_path_slug(league_name)
         event_slug = build_event_slug(
             str(event.get("home") or ""),
             str(event.get("away") or ""),
-            style="stats",
+            style=resolved_style,
         )
-        return f"{base}/sports/{sport_part}/stats/{league_slug}/{event_slug}/{event_id_part}"
+        section = "stats" if resolved_style == "stats" else "matchup"
+        path = f"{base}/sports/{sport_part}/{section}/{league_slug}/{event_slug}"
+        if resolved_style == "stats":
+            return f"{path}/{event_id_part}"
+        return f"{path}/{int(league['league_id'])}/{event_id_part}"
 
     league_slug = slugify(league_name) if resolved_style != "compact_matchup" else ps3838_path_slug(league_name)
     event_slug = build_event_slug(

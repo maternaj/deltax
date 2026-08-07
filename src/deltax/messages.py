@@ -118,6 +118,11 @@ SPORT_EMOJI_BY_NAME: dict[str, str] = {
 }
 
 
+def escape_telegram_href(url: str) -> str:
+    """Escape a URL for Telegram HTML href (only & must be entity-escaped)."""
+    return url.strip().replace("&", "&amp;")
+
+
 def format_match_url(match_url_base: str, relative_url: str) -> str:
     rel = (relative_url or "").strip()
     if not rel:
@@ -171,7 +176,7 @@ def match_phase_emoji(match_type: object) -> str:
 
 def format_kickoff_prague(date_start_ms: int | None) -> str:
     if not date_start_ms:
-        return "?"
+        return "n/a"
     dt = datetime.fromtimestamp(date_start_ms / 1000, tz=timezone.utc).astimezone(PRAGUE_TZ)
     return dt.strftime("%Y-%m-%d %H:%M")
 
@@ -225,7 +230,7 @@ def _format_live_elapsed(total_seconds: int) -> str:
 def format_time_to_kickoff(date_start_ms: int | None, reference_ts: float) -> str:
     """Human-readable countdown or elapsed time; both instants compared in UTC."""
     if not date_start_ms:
-        return "?"
+        return "n/a"
     seconds_to_ko = _seconds_to_kickoff(date_start_ms, reference_ts)
     if seconds_to_ko < 0:
         return _format_live_elapsed(abs(seconds_to_ko))
@@ -244,7 +249,7 @@ def format_line4_timing(
     tail = f"drop <b>{drop_min}</b> min · <b>{drop_delta}</b>"
 
     if not date_start_ms:
-        return f"⏰ ? ({ttk}) · {tail}"
+        return f"⏰ n/a (n/a) · {tail}"
 
     seconds_to_ko = _seconds_to_kickoff(date_start_ms, reference_ts)
     if 0 < seconds_to_ko < 3600:
@@ -265,7 +270,8 @@ def bookmaker_tag(source: str) -> str:
 def format_drop_alert_message(hit: DropHit, *, match_url_base: str, source: str = "tipsport") -> str:
     row = hit.row
     url = format_match_url(match_url_base, row.match_url)
-    match_link = f'<a href="{escape(url, quote=True)}">{escape(row.match_name)}</a>'
+    href = escape_telegram_href(url)
+    match_link = f'<a href="{href}">{escape(row.match_name)}</a>'
     drop_delta = format_drop_delta(hit.drop_pct, hit.implied_drop_pct)
     drop_min = drop_window_minutes(hit.baseline_observed_at, hit.current_observed_at)
     tag = bookmaker_tag(source)
@@ -273,7 +279,7 @@ def format_drop_alert_message(hit: DropHit, *, match_url_base: str, source: str 
     line1 = f"[{tag}] {sport_emoji(row.super_sport_name)} <b>{escape(row.competition_name)}</b>"
     line2 = (
         f"{match_phase_emoji(row.match_type)} "
-        f"{match_link}, <b>{escape(row.event_name)}</b>"
+        f"{match_link} · <b>{escape(row.event_name)}</b>"
     )
     line3 = (
         f"{selection_icon(row.opp_name)} "
