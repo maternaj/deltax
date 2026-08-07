@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from deltax.markets import MarketRegistry, load_market_registry
+from deltax.markets import MarketRegistry, event_name_excluded, load_market_registry
 
 
 def test_should_process_wanted_and_pending(tmp_path: Path) -> None:
@@ -97,3 +97,14 @@ def test_wanted_conflicts_with_blacklisted_prefix(tmp_path: Path) -> None:
     }
     with pytest.raises(ValueError, match="blacklisted_prefixes"):
         load_market_registry(raw, config_path=tmp_path / "config.yaml")
+
+
+def test_event_name_excluded_case_sensitive() -> None:
+    substrings = ("ITF",)
+    assert event_name_excluded("ITF Challenger Prague", substrings)
+    assert not event_name_excluded("itf Challenger Prague", substrings)
+    assert not event_name_excluded("Challenger Prague", substrings)
+
+
+def test_event_name_excluded_empty_substrings() -> None:
+    assert not event_name_excluded("ITF Prague", ())

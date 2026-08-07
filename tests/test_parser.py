@@ -1,6 +1,11 @@
 """Parser tests."""
 
-from deltax.parser import build_tipsport_snapshot, parse_selections
+from deltax.parser import (
+    build_tipsport_snapshot,
+    parse_selections,
+    tipsport_snapshot_from_tracked,
+    tracked_from_row,
+)
 
 SAMPLE = {
     "count": 1,
@@ -98,6 +103,16 @@ def test_null_participants_allowed() -> None:
     row = parse_selections(payload)[0]
     assert row.home_participant is None
     assert row.visiting_participant is None
+
+
+def test_tipsport_snapshot_from_tracked_roundtrip_fields() -> None:
+    row = parse_selections(SAMPLE)[0]
+    tracked = tracked_from_row(row)
+    snap = tipsport_snapshot_from_tracked(tracked)
+    assert snap["match"]["id"] == row.match_id
+    assert snap["event"]["mySelectionId"] == row.my_selection_id
+    assert snap["opp"]["id"] == row.opp_id
+    assert snap["opp"]["odd"] == row.odd
 
 
 def test_build_tipsport_snapshot() -> None:

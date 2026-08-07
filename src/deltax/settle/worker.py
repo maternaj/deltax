@@ -166,6 +166,7 @@ class DeltaXSettle:
 
     def stop(self) -> None:
         self.running = False
+        self.client.close()
 
     def validate_startup(self) -> None:
         validate_settler_connection(self.env)

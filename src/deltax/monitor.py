@@ -12,6 +12,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from deltax.config import AppConfig, load_config, load_env
+from deltax.drop_detector import MonitorStore, SelectionState, mark_market_alerted, pick_market_alerts, purge_stale_selections, update_selection_state
 from deltax.db import (
     DatabaseError,
     SQL_INSERT_ALERT,
@@ -21,9 +22,9 @@ from deltax.db import (
     kickoff_from_date_start,
     validate_connection,
 )
-from deltax.drop_detector import MonitorStore, SelectionState, mark_market_alerted, pick_market_alerts, purge_stale_selections, update_selection_state
+from deltax.markets import event_name_excluded
 from deltax.messages import format_drop_alert_message, format_match_url
-from deltax.parser import SelectionRow, parse_selections
+from deltax.parser import SelectionRow, tracked_from_row, tipsport_snapshot_from_tracked, parse_selections
 from deltax.telegram import TelegramSender, parse_telegram_groups, resolve_alert_groups, telegram_enabled
 from deltax.tipsport_client import TipsportClient
 
@@ -75,6 +76,7 @@ class DeltaXMonitor:
     def stop(self) -> None:
         self.runtime.running = False
         self.telegram.close()
+        self.client.close()
 
     def validate_startup(self) -> None:
         validate_connection(self.env)
@@ -94,18 +96,21 @@ class DeltaXMonitor:
         seen: set[int] = set()
         changed = 0
         for row in rows:
+            if event_name_excluded(row.event_name, self.config.excluded_event_name_substrings):
+                continue
             registry.register_seen(row.my_selection_id)
             if not registry.should_process(row.my_selection_id):
                 continue
             seen.add(row.opp_id)
-            state = store.selections.get(row.opp_id)
+            tracked = tracked_from_row(row)
+            state = store.selections.get(tracked.opp_id)
             if state is None:
-                state = SelectionState(row=row)
-                store.selections[row.opp_id] = state
+                state = SelectionState(selection=tracked)
+                store.selections[tracked.opp_id] = state
             if update_selection_state(
                 store,
                 state,
-                row,
+                tracked,
                 now_ts=now_ts,
                 max_window_seconds=self._max_window,
             ):
@@ -205,7 +210,7 @@ class DeltaXMonitor:
             "tier_implied_drop_pct": hit.tier.implied_drop_pct,
             "baseline_observed_at": epoch_to_timestamptz(hit.baseline_observed_at),
             "current_observed_at": epoch_to_timestamptz(hit.current_observed_at),
-            "tipsport_snapshot": Json(row.tipsport_snapshot),
+            "tipsport_snapshot": Json(tipsport_snapshot_from_tracked(row)),
             "message": message,
             "telegram_ok": False,
             "telegram_groups": "",
@@ -247,17 +252,22 @@ class DeltaXMonitor:
                 logger.error("Tipsport fetch failed for endpoint=%s", endpoint)
                 continue
             rows.extend(parse_selections(payload))
+            del payload
 
         if failed_endpoints == len(self.config.tipsport_endpoints):
+            rows.clear()
             return {"ok": False, "selections": 0, "alerts": 0}
 
         now_ts = time.time()
         changed = self.ingest_rows(rows, now_ts=now_ts)
+        selection_count = len(rows)
+        del rows
         alerts = self.process_alerts(now_ts=now_ts)
         return {
             "ok": True,
-            "selections": len(rows),
+            "selections": selection_count,
             "tracked": len(self.runtime.store.selections),
+            "markets": len(self.runtime.store.markets),
             "changed": changed,
             "alerts": alerts,
             "endpoints_ok": len(self.config.tipsport_endpoints) - failed_endpoints,
@@ -267,7 +277,8 @@ class DeltaXMonitor:
     def run_forever(self) -> None:
         logger.info(
             "DeltaX monitor started endpoints=%s refresh=%ss max_odds=%s tiers=%s ttl=%ss "
-            "markets wanted=%d pending=%d blacklisted=%d blacklisted_prefixes=%d",
+            "markets wanted=%d pending=%d blacklisted=%d blacklisted_prefixes=%d "
+            "excluded_event_name_substrings=%d",
             list(self.config.tipsport_endpoints),
             self.config.refresh_seconds,
             self.config.max_odds,
@@ -277,15 +288,17 @@ class DeltaXMonitor:
             len(self.config.market_registry.pending),
             len(self.config.market_registry.blacklisted),
             len(self.config.market_registry.blacklisted_prefixes),
+            len(self.config.excluded_event_name_substrings),
         )
         while self.runtime.running:
             started = time.monotonic()
             stats = self.run_cycle()
             if stats.get("ok"):
                 logger.info(
-                    "Cycle OK selections=%s tracked=%s changed=%s alerts=%s endpoints_ok=%s endpoints_failed=%s",
+                    "Cycle OK selections=%s tracked=%s markets=%s changed=%s alerts=%s endpoints_ok=%s endpoints_failed=%s",
                     stats.get("selections"),
                     stats.get("tracked"),
+                    stats.get("markets"),
                     stats.get("changed"),
                     stats.get("alerts"),
                     stats.get("endpoints_ok"),

@@ -71,3 +71,19 @@ def test_load_config_requires_endpoint(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="tipsport.endpoints"):
         load_config(env={"DELTAX_CONFIG_PATH": str(config_path)})
+
+
+def test_load_config_excluded_event_name_substrings(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.dump(
+            {
+                "tipsport": {"endpoints": ["/matches"]},
+                "drop_tiers": [{"window_seconds": 0, "drop_pct": 10}],
+                "monitor": {"excluded_event_name_substrings": ["ITF", "Test"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(env={"DELTAX_CONFIG_PATH": str(config_path)})
+    assert config.excluded_event_name_substrings == ("ITF", "Test")

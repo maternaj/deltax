@@ -63,6 +63,8 @@ Run `02_create_deltax_settler.sql` before migrations if the settler role is not 
 - `config.yaml` — endpoints, refresh interval, drop tiers, min odds, market lists, Telegram defaults
 - `.env` — `DELTAX_DATABASE_URL`, `DELTAX_TELEGRAM_GROUPS`, `DELTAX_ALERT_GROUPS`
 
+Production ops: [`how_to_run.md`](how_to_run.md).
+
 Tipsport feeds (`tipsport.endpoints` — fetched in sequence every refresh cycle):
 
 ```yaml
@@ -156,4 +158,4 @@ chmod +x scripts/start_vps_worker.sh scripts/start_vps_settle.sh
 
 ## Repo
 
-GitHub: `https://github.com/maternaj/deltax` (nested under optagame like sharpener).
+GitHub: `https://github.com/maternaj/deltax` (standalone repo at `~/deltax/`).

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from deltax.config import DropTier
-from deltax.parser import SelectionRow
+from deltax.parser import TrackedSelection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,18 +19,18 @@ class PriceSample:
 
 @dataclass
 class SelectionState:
-    row: SelectionRow
+    selection: TrackedSelection
     history: list[PriceSample] = field(default_factory=list)
     last_odd: float | None = None
     last_seen_ts: float = 0.0
 
     @property
     def opp_id(self) -> int:
-        return self.row.opp_id
+        return self.selection.opp_id
 
     @property
     def market_key(self) -> tuple[int, str]:
-        return self.row.match_id, self.row.my_selection_id
+        return self.selection.match_id, self.selection.my_selection_id
 
 
 @dataclass
@@ -56,7 +59,7 @@ class DropHit:
     baseline_observed_at: float
     current_observed_at: float
     tier: DropTier
-    row: SelectionRow
+    row: TrackedSelection
 
 
 def sample_at_or_before(history: list[PriceSample], target_ts: float) -> PriceSample | None:
@@ -135,8 +138,8 @@ def evaluate_selection(
             continue
         hit = DropHit(
             opp_id=state.opp_id,
-            match_id=state.row.match_id,
-            my_selection_id=state.row.my_selection_id,
+            match_id=state.selection.match_id,
+            my_selection_id=state.selection.my_selection_id,
             drop_pct=drop_pct,
             implied_drop_pct=implied_drop_pct,
             odds_previous=baseline_sample.odd,
@@ -144,7 +147,7 @@ def evaluate_selection(
             baseline_observed_at=baseline_sample.ts,
             current_observed_at=current_sample.ts,
             tier=tier,
-            row=state.row,
+            row=state.selection,
         )
         if best is None or hit.implied_drop_pct > best.implied_drop_pct:
             best = hit
@@ -182,28 +185,41 @@ def update_market_recovery(
 def update_selection_state(
     store: MonitorStore,
     state: SelectionState,
-    row: SelectionRow,
+    selection: TrackedSelection,
     *,
     now_ts: float,
     max_window_seconds: int,
 ) -> bool:
     """Update in-memory state. Returns True when odds changed vs previous sample."""
-    state.row = row
+    state.selection = selection
     state.last_seen_ts = now_ts
-    if not row.betting_enabled:
+    if not selection.betting_enabled:
         return False
 
     previous_odd = state.last_odd
-    state.last_odd = row.odd
-    state.history.append(PriceSample(ts=now_ts, odd=row.odd))
+    state.last_odd = selection.odd
+    state.history.append(PriceSample(ts=now_ts, odd=selection.odd))
     cutoff = now_ts - max_window_seconds - 120
     trim_history(state.history, cutoff_ts=cutoff)
-    update_market_recovery(store, market_key=state.market_key, opp_id=state.opp_id, odd=row.odd)
+    update_market_recovery(
+        store,
+        market_key=state.market_key,
+        opp_id=state.opp_id,
+        odd=selection.odd,
+    )
 
-    changed = previous_odd is not None and previous_odd != row.odd
+    changed = previous_odd is not None and previous_odd != selection.odd
     if changed:
         store.changed_opp_ids.add(state.opp_id)
     return changed
+
+
+def purge_stale_markets(store: MonitorStore) -> int:
+    live_keys = {state.market_key for state in store.selections.values()}
+    stale = [key for key in store.markets if key not in live_keys]
+    for key in stale:
+        del store.markets[key]
+    return len(stale)
 
 
 def purge_stale_selections(store: MonitorStore, *, now_ts: float, ttl_seconds: int) -> int:
@@ -211,6 +227,9 @@ def purge_stale_selections(store: MonitorStore, *, now_ts: float, ttl_seconds: i
     stale = [opp_id for opp_id, state in store.selections.items() if state.last_seen_ts < cutoff]
     for opp_id in stale:
         del store.selections[opp_id]
+    purged_markets = purge_stale_markets(store)
+    if purged_markets:
+        logger.debug("Purged %d stale market states from memory", purged_markets)
     return len(stale)
 
 

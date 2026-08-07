@@ -53,7 +53,9 @@ def build_tipsport_snapshot(
 
 
 @dataclass(frozen=True)
-class SelectionRow:
+class TrackedSelection:
+    """In-memory selection fields — no tipsport_snapshot (built only when persisting alerts)."""
+
     opp_id: int
     event_id: int
     match_id: int
@@ -73,7 +75,67 @@ class SelectionRow:
     opp_number: str | None
     match_url: str
     date_start: int | None
+
+
+@dataclass(frozen=True)
+class SelectionRow(TrackedSelection):
     tipsport_snapshot: dict[str, Any]
+
+
+def tracked_from_row(row: SelectionRow) -> TrackedSelection:
+    return TrackedSelection(
+        opp_id=row.opp_id,
+        event_id=row.event_id,
+        match_id=row.match_id,
+        my_selection_id=row.my_selection_id,
+        match_name=row.match_name,
+        home_participant=row.home_participant,
+        visiting_participant=row.visiting_participant,
+        competition_name=row.competition_name,
+        sport_name=row.sport_name,
+        super_sport_name=row.super_sport_name,
+        match_type=row.match_type,
+        event_name=row.event_name,
+        opp_name=row.opp_name,
+        odd=row.odd,
+        betting_enabled=row.betting_enabled,
+        opp_type=row.opp_type,
+        opp_number=row.opp_number,
+        match_url=row.match_url,
+        date_start=row.date_start,
+    )
+
+
+def tipsport_snapshot_from_tracked(tracked: TrackedSelection) -> dict[str, Any]:
+    """Rebuild alert JSON from flat tracked fields (no raw feed retained in memory)."""
+    return {
+        "match": {
+            "id": tracked.match_id,
+            "name": tracked.match_name,
+            "matchType": tracked.match_type,
+            "matchUrl": tracked.match_url,
+            "dateStart": tracked.date_start,
+            "nameCompetition": tracked.competition_name,
+            "nameSport": tracked.sport_name,
+            "nameSuperSport": tracked.super_sport_name,
+            "homeParticipant": tracked.home_participant,
+            "visitingParticipant": tracked.visiting_participant,
+        },
+        "event": {
+            "id": tracked.event_id,
+            "name": tracked.event_name,
+            "mySelectionId": tracked.my_selection_id,
+        },
+        "opp": {
+            "id": tracked.opp_id,
+            "name": tracked.opp_name,
+            "odd": tracked.odd,
+            "bettingEnabled": tracked.betting_enabled,
+            "type": tracked.opp_type,
+            "oppNumber": tracked.opp_number,
+            "idEvent": tracked.event_id,
+        },
+    }
 
 
 def _iter_events(match: dict[str, Any]) -> Iterable[dict[str, Any]]:

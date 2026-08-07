@@ -4,6 +4,7 @@ import pytest
 
 from deltax.config import DropTier
 from deltax.drop_detector import (
+    MarketAlertState,
     MonitorStore,
     PriceSample,
     SelectionState,
@@ -13,14 +14,15 @@ from deltax.drop_detector import (
     mark_market_alerted,
     odds_at_or_before,
     pick_market_alerts,
+    purge_stale_markets,
     purge_stale_selections,
     sample_at_or_before,
     update_selection_state,
 )
-from deltax.parser import SelectionRow
+from deltax.parser import SelectionRow, TrackedSelection
 
 
-def _row(**kwargs) -> SelectionRow:
+def _row(**kwargs) -> TrackedSelection:
     defaults = {
         "opp_id": 1,
         "event_id": 10,
@@ -41,10 +43,9 @@ def _row(**kwargs) -> SelectionRow:
         "opp_number": None,
         "match_url": "/kurzy/zapas/a-b/100",
         "date_start": None,
-        "tipsport_snapshot": {"match": {}, "event": {}, "opp": {}},
     }
     defaults.update(kwargs)
-    return SelectionRow(**defaults)
+    return TrackedSelection(**defaults)
 
 
 TIERS = (
@@ -62,7 +63,7 @@ def test_compute_implied_drop_pct() -> None:
 
 
 def test_tier_requires_both_drop_methods() -> None:
-    state = SelectionState(row=_row(odd=1.73))
+    state = SelectionState(selection=_row(odd=1.73))
     state.history = [PriceSample(ts=0.0, odd=1.9), PriceSample(ts=30.0, odd=1.73)]
     tier = DropTier(window_seconds=0, drop_pct=10, implied_drop_pct=6)
     assert evaluate_selection(state, now_ts=30.0, tiers=(tier,), market_armed=True) is None
@@ -75,7 +76,7 @@ def test_tier_requires_both_drop_methods() -> None:
 
 
 def test_zero_implied_threshold_disables_check() -> None:
-    state = SelectionState(row=_row(odd=1.73))
+    state = SelectionState(selection=_row(odd=1.73))
     state.history = [PriceSample(ts=0.0, odd=1.9), PriceSample(ts=30.0, odd=1.73)]
     tier = DropTier(window_seconds=0, drop_pct=8, implied_drop_pct=0)
     hit = evaluate_selection(state, now_ts=30.0, tiers=(tier,), market_armed=True)
@@ -83,7 +84,7 @@ def test_zero_implied_threshold_disables_check() -> None:
 
 
 def test_zero_odds_threshold_disables_check() -> None:
-    state = SelectionState(row=_row(odd=1.73))
+    state = SelectionState(selection=_row(odd=1.73))
     state.history = [PriceSample(ts=0.0, odd=1.9), PriceSample(ts=30.0, odd=1.73)]
     tier = DropTier(window_seconds=0, drop_pct=0, implied_drop_pct=5)
     hit = evaluate_selection(state, now_ts=30.0, tiers=(tier,), market_armed=True)
@@ -111,7 +112,7 @@ def test_sample_at_or_before() -> None:
 
 def test_zero_window_compares_previous_poll() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=2.0))
+    state = SelectionState(selection=_row(odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=2.0), now_ts=0.0, max_window_seconds=600)
     update_selection_state(store, state, _row(odd=1.8), now_ts=30.0, max_window_seconds=600)
@@ -126,7 +127,7 @@ def test_zero_window_compares_previous_poll() -> None:
 
 def test_no_alert_on_first_poll() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=2.0))
+    state = SelectionState(selection=_row(odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=2.0), now_ts=10.0, max_window_seconds=600)
     hits = pick_market_alerts(store, now_ts=10.0, tiers=TIERS, max_odds=0.0)
@@ -134,7 +135,7 @@ def test_no_alert_on_first_poll() -> None:
 
 
 def test_tier_fires_on_window_baseline() -> None:
-    state = SelectionState(row=_row(odd=1.8))
+    state = SelectionState(selection=_row(odd=1.8))
     state.history = [
         PriceSample(ts=0.0, odd=2.0),
         PriceSample(ts=180.0, odd=1.9),
@@ -154,7 +155,7 @@ def test_tier_fires_on_window_baseline() -> None:
 
 def test_realert_after_recovery() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(opp_id=1, odd=2.0))
+    state = SelectionState(selection=_row(opp_id=1, odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=2.0), now_ts=0.0, max_window_seconds=600)
     update_selection_state(store, state, _row(odd=1.8), now_ts=30.0, max_window_seconds=600)
@@ -173,8 +174,8 @@ def test_realert_after_recovery() -> None:
 def test_market_picks_highest_implied_drop_not_odds_ratio() -> None:
     """When odds-ratio drop differs from implied shift, implied wins."""
     store = MonitorStore()
-    longshot = SelectionState(row=_row(opp_id=1, opp_name="Long", odd=4.0))
-    fav = SelectionState(row=_row(opp_id=2, opp_name="Fav", odd=2.0))
+    longshot = SelectionState(selection=_row(opp_id=1, opp_name="Long", odd=4.0))
+    fav = SelectionState(selection=_row(opp_id=2, opp_name="Fav", odd=2.0))
     store.selections[1] = longshot
     store.selections[2] = fav
     update_selection_state(store, longshot, _row(opp_id=1, odd=4.0), now_ts=0.0, max_window_seconds=600)
@@ -193,8 +194,8 @@ def test_market_picks_highest_implied_drop_not_odds_ratio() -> None:
 
 def test_market_picks_highest_drop() -> None:
     store = MonitorStore()
-    home = SelectionState(row=_row(opp_id=1, opp_name="Home", odd=2.0))
-    away = SelectionState(row=_row(opp_id=2, opp_name="Away", odd=2.0))
+    home = SelectionState(selection=_row(opp_id=1, opp_name="Home", odd=2.0))
+    away = SelectionState(selection=_row(opp_id=2, opp_name="Away", odd=2.0))
     store.selections[1] = home
     store.selections[2] = away
     update_selection_state(store, home, _row(opp_id=1, odd=2.0), now_ts=0.0, max_window_seconds=600)
@@ -210,8 +211,8 @@ def test_market_picks_highest_drop() -> None:
 
 def test_max_odds_filters_before_market_winner() -> None:
     store = MonitorStore()
-    home = SelectionState(row=_row(opp_id=1, opp_name="Home", odd=3.0))
-    away = SelectionState(row=_row(opp_id=2, opp_name="Away", odd=6.0))
+    home = SelectionState(selection=_row(opp_id=1, opp_name="Home", odd=3.0))
+    away = SelectionState(selection=_row(opp_id=2, opp_name="Away", odd=6.0))
     store.selections[1] = home
     store.selections[2] = away
     update_selection_state(store, home, _row(opp_id=1, odd=3.0), now_ts=0.0, max_window_seconds=600)
@@ -227,7 +228,7 @@ def test_max_odds_filters_before_market_winner() -> None:
 
 def test_max_odds_excludes_longshot_selections() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=8.0))
+    state = SelectionState(selection=_row(odd=8.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=8.0), now_ts=0.0, max_window_seconds=600)
     update_selection_state(store, state, _row(odd=7.0), now_ts=30.0, max_window_seconds=600)
@@ -238,7 +239,7 @@ def test_max_odds_excludes_longshot_selections() -> None:
 
 def test_ignore_disabled_selection_updates() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=2.0))
+    state = SelectionState(selection=_row(odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=1.5, betting_enabled=False), now_ts=10.0, max_window_seconds=600)
     assert state.history == []
@@ -246,7 +247,7 @@ def test_ignore_disabled_selection_updates() -> None:
 
 def test_only_changed_selections_are_evaluated() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=2.0))
+    state = SelectionState(selection=_row(odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=2.0), now_ts=0.0, max_window_seconds=600)
     update_selection_state(store, state, _row(odd=1.8), now_ts=30.0, max_window_seconds=600)
@@ -259,7 +260,7 @@ def test_only_changed_selections_are_evaluated() -> None:
 
 def test_soft_delete_keeps_history_until_ttl() -> None:
     store = MonitorStore()
-    state = SelectionState(row=_row(odd=2.0))
+    state = SelectionState(selection=_row(odd=2.0))
     store.selections[1] = state
     update_selection_state(store, state, _row(odd=2.0), now_ts=0.0, max_window_seconds=600)
     state.last_seen_ts = 0.0
@@ -269,3 +270,16 @@ def test_soft_delete_keeps_history_until_ttl() -> None:
 
     assert purge_stale_selections(store, now_ts=700.0, ttl_seconds=600) == 1
     assert 1 not in store.selections
+
+
+def test_purge_stale_markets_removes_orphaned_state() -> None:
+    store = MonitorStore()
+    state = SelectionState(selection=_row(odd=2.0))
+    store.selections[1] = state
+    store.markets[(100, "16-WINNER_3W-1")] = MarketAlertState(armed=False)
+    store.markets[(999, "16-WINNER_3W-2")] = MarketAlertState(armed=True)
+
+    state.last_seen_ts = 0.0
+    assert purge_stale_selections(store, now_ts=700.0, ttl_seconds=600) == 1
+    assert (100, "16-WINNER_3W-1") not in store.markets
+    assert (999, "16-WINNER_3W-2") not in store.markets

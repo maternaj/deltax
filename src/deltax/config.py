@@ -40,6 +40,7 @@ class AppConfig:
     refresh_seconds: int
     selection_ttl_seconds: int
     max_odds: float
+    excluded_event_name_substrings: tuple[str, ...]
     drop_tiers: tuple[DropTier, ...]
     match_url_base: str
     default_alert_groups: str
@@ -118,6 +119,14 @@ def _parse_settle_config(settle: dict[str, Any], env: dict[str, str]) -> SettleC
     )
 
 
+def _parse_excluded_event_name_substrings(monitor: dict[str, Any]) -> tuple[str, ...]:
+    values = monitor.get("excluded_event_name_substrings") or []
+    if not isinstance(values, list):
+        raise ValueError("monitor.excluded_event_name_substrings must be a list")
+    substrings = [str(item) for item in values if str(item)]
+    return tuple(substrings)
+
+
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
     env = env or dict(os.environ)
     root = _project_root()
@@ -168,6 +177,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
     if max_odds < 0:
         raise ValueError("max_odds must be >= 0 (0 = no cap)")
 
+    excluded_event_name_substrings = _parse_excluded_event_name_substrings(monitor)
     market_registry = load_market_registry(raw, config_path=config_path)
 
     return AppConfig(
@@ -176,6 +186,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         refresh_seconds=refresh,
         selection_ttl_seconds=selection_ttl,
         max_odds=max_odds,
+        excluded_event_name_substrings=excluded_event_name_substrings,
         drop_tiers=tuple(sorted(tiers, key=lambda t: t.window_seconds)),
         match_url_base=str(telegram.get("match_url_base") or "https://www.tipsport.cz").rstrip("/"),
         default_alert_groups=str(

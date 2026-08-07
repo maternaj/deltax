@@ -15,6 +15,8 @@ monitor:
   refresh_seconds: 30
   selection_ttl_seconds: 600
   max_odds: 5.0
+  excluded_event_name_substrings:
+  - ITF
 drop_tiers:
 - window_seconds: 0
   drop_pct: 0
@@ -68,6 +70,7 @@ markets:
   pending:
   - 11-WINNER_3W-1
   - 13-WINNER_NWAY-a
+  - 14-WINNER_3W-1
   - 16-CORRECT_ORDER_1ST_2ND_AND_3RD-a
   - 16-GENERAL_QUESTION_YES_NO-a
   - 16-HOW_WILL_TIE_BE_DECIDED-0
@@ -80,6 +83,7 @@ markets:
   - 169-WINNER_2W-0
   - 18-WINNER_NWAY-a
   - 2-WINNER_3W-1
+  - 20-WINNER_3W-1
   - 208-ASIAN_TOTAL-1
   - 208-END_IN_90_SECONDS-r
   - 208-FIGHT_OUTCOME_DECISION-1
@@ -106,6 +110,7 @@ markets:
   - 27-WINNER_3W_DOUBLE_CHANCE-1
   - 28-WINNER_2W-1
   - 29-WINNER_3W-1
+  - 29-WINNER_NWAY-a
   - 31-ASIAN_HANDICAP_2W_AWAY-1
   - 31-ASIAN_HANDICAP_2W_HOME-1
   - 31-ASIAN_TOTAL-1
@@ -158,6 +163,7 @@ markets:
   - 43-WINNER_2W-1
   - 43-WINNER_2W-s
   - 43-WINNER_OR_LEAD-1
+  - 44-WINNER_NWAY-a
   - 45-ASIAN_HANDICAP_2W_AWAY-1
   - 45-ASIAN_HANDICAP_2W_HOME-1
   - 45-ASIAN_TOTAL-1

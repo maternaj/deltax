@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 INIT_WEB_PATH = "/rest/common/v1/init-web"
 SCRAPER_MAX_AGE_HOURS = 24
+SESSION_INVALID_STATUS_CODES = frozenset({401, 403})
 
 
 class ScraperState:
@@ -180,6 +181,17 @@ def save_successful_scraper(scraper: cloudscraper25.CloudScraper, state_file: st
         return False
 
 
+def invalidate_saved_scraper(state_file: str) -> None:
+    """Remove persisted session so the next fetch runs init-web."""
+    try:
+        path = pathlib.Path(state_file)
+        if path.exists():
+            path.unlink()
+            logger.info("Invalidated scraper state file %s", state_file)
+    except Exception:
+        logger.exception("Failed to invalidate scraper state file %s", state_file)
+
+
 def load_saved_scraper(state_file: str) -> cloudscraper25.CloudScraper | None:
     try:
         path = pathlib.Path(state_file)
@@ -213,18 +225,20 @@ def fetch_json(
     scraper: cloudscraper25.CloudScraper,
     base_url: str,
     endpoint: str,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, int | None]:
     url = f"{base_url}{endpoint}"
     response = scraper.get(url, headers=dict(scraper.headers), timeout=30)
     logger.info("GET %s -> %s", endpoint, response.status_code)
     if response.status_code != 200:
-        return None
+        return None, response.status_code
     try:
         data = response.json()
     except Exception:
         logger.exception("Invalid JSON from Tipsport")
-        return None
-    return data if isinstance(data, dict) else None
+        return None, response.status_code
+    if isinstance(data, dict):
+        return data, response.status_code
+    return None, response.status_code
 
 
 class TipsportClient:
@@ -238,31 +252,63 @@ class TipsportClient:
         self.base_url = base_url.rstrip("/")
         self.state_file = state_file or default_state_file()
         self.max_retries = max_retries
+        self._scraper: cloudscraper25.CloudScraper | None = None
+
+    def close(self) -> None:
+        self._scraper = None
+
+    def _reset_scraper(self) -> None:
+        self._scraper = None
+
+    def _load_scraper(self) -> cloudscraper25.CloudScraper | None:
+        if self._scraper is not None:
+            return self._scraper
+        scraper = load_saved_scraper(self.state_file)
+        if scraper is not None:
+            self._scraper = scraper
+        return scraper
+
+    def _bootstrap_scraper(self) -> cloudscraper25.CloudScraper | None:
+        scraper = _create_scraper()
+        if not init_web_request(scraper, self.base_url):
+            return None
+        save_successful_scraper(scraper, self.state_file)
+        self._scraper = scraper
+        return scraper
 
     def fetch(self, endpoint: str) -> dict[str, Any] | None:
-        scraper = load_saved_scraper(self.state_file)
-        if scraper:
-            try:
-                result = fetch_json(scraper, self.base_url, endpoint)
-                if result is not None:
-                    return result
-            except Exception:
-                logger.warning("Saved scraper session invalid, creating new one", exc_info=True)
-
         attempt = 0
         while attempt < self.max_retries:
-            attempt += 1
-            logger.info("Tipsport fetch attempt %d/%d", attempt, self.max_retries)
-            scraper = _create_scraper()
-            if not init_web_request(scraper, self.base_url):
+            scraper = self._load_scraper()
+            if scraper is None:
+                scraper = self._bootstrap_scraper()
+                if scraper is None:
+                    attempt += 1
+                    if attempt < self.max_retries:
+                        exponential_backoff(attempt)
+                    continue
+
+            try:
+                result, status_code = fetch_json(scraper, self.base_url, endpoint)
+            except Exception:
+                logger.warning("Tipsport session invalid, resetting scraper", exc_info=True)
+                self._reset_scraper()
+                attempt += 1
                 if attempt < self.max_retries:
                     exponential_backoff(attempt)
                 continue
-            result = fetch_json(scraper, self.base_url, endpoint)
+
             if result is not None:
                 save_successful_scraper(scraper, self.state_file)
                 return result
+
+            if status_code in SESSION_INVALID_STATUS_CODES:
+                invalidate_saved_scraper(self.state_file)
+
+            self._reset_scraper()
+            attempt += 1
             if attempt < self.max_retries:
+                logger.info("Tipsport fetch attempt %d/%d", attempt + 1, self.max_retries)
                 exponential_backoff(attempt)
         return None
 

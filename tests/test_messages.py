@@ -13,11 +13,11 @@ from deltax.messages import (
     selection_icon,
     sport_emoji,
 )
-from deltax.parser import SelectionRow
+from deltax.parser import SelectionRow, TrackedSelection
 from deltax.telegram import TelegramSender, parse_telegram_groups
 
 
-def _selection_row(**overrides: object) -> SelectionRow:
+def _tracked(**overrides: object) -> TrackedSelection:
     base = {
         "opp_id": 2664187029,
         "event_id": 10,
@@ -38,13 +38,12 @@ def _selection_row(**overrides: object) -> SelectionRow:
         "opp_number": None,
         "match_url": "/kurzy/zapas/arsenal-chelsea/8302416",
         "date_start": 1775395800000,
-        "tipsport_snapshot": {"match": {}, "event": {}, "opp": {}},
     }
     base.update(overrides)
-    return SelectionRow(**base)
+    return TrackedSelection(**base)
 
 
-def _drop_hit(row: SelectionRow, **overrides: object) -> DropHit:
+def _drop_hit(row: TrackedSelection, **overrides: object) -> DropHit:
     base = {
         "opp_id": row.opp_id,
         "match_id": row.match_id,
@@ -206,7 +205,7 @@ def test_format_line4_timing_layouts() -> None:
 
 
 def test_format_drop_alert_message_four_line_layout() -> None:
-    row = _selection_row()
+    row = _tracked()
     hit = _drop_hit(
         row,
         baseline_observed_at=KICKOFF_TS - 8280,

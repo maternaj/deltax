@@ -86,6 +86,14 @@ def _parse_blacklisted_prefixes(raw: dict[str, Any]) -> tuple[str, ...]:
     return tuple(sorted(prefixes))
 
 
+def event_name_excluded(event_name: object, substrings: tuple[str, ...]) -> bool:
+    """Case-sensitive substring match against Tipsport event name (Telegram line 2)."""
+    if not substrings:
+        return False
+    name = str(event_name or "")
+    return any(substring in name for substring in substrings)
+
+
 def _blacklist_conflicts(
     ids: set[str],
     *,

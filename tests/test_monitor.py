@@ -11,7 +11,7 @@ from deltax.config import AppConfig, DropTier, SettleConfig, load_config
 from deltax.drop_detector import DropHit
 from deltax.markets import load_market_registry
 from deltax.monitor import DeltaXMonitor
-from deltax.parser import SelectionRow
+from deltax.parser import SelectionRow, tracked_from_row
 from deltax.telegram import telegram_enabled
 
 
@@ -23,6 +23,7 @@ def _config() -> AppConfig:
         refresh_seconds=30,
         selection_ttl_seconds=600,
         max_odds=5.0,
+        excluded_event_name_substrings=("ITF",),
         drop_tiers=(DropTier(window_seconds=0, drop_pct=10),),
         match_url_base="https://www.tipsport.cz",
         default_alert_groups="A",
@@ -67,7 +68,7 @@ def _selection_row(**kwargs) -> SelectionRow:
 
 
 def _hit() -> DropHit:
-    row = _selection_row()
+    row = tracked_from_row(_selection_row())
     return DropHit(
         opp_id=1,
         match_id=100,
@@ -133,6 +134,35 @@ def test_blacklisted_markets_skipped_on_ingest() -> None:
     assert 99 not in monitor.runtime.store.selections
 
 
+def test_excluded_event_name_skipped_on_ingest() -> None:
+    monitor = DeltaXMonitor(_config(), env={"DELTAX_TELEGRAM_GROUPS": ""})
+    row = _selection_row(
+        opp_id=77,
+        my_selection_id="16-WINNER_3W-1",
+        event_name="ITF Challenger Prague",
+        opp_name="A",
+        odd=2.0,
+    )
+    changed = monitor.ingest_rows([row], now_ts=10.0)
+    assert changed == 0
+    assert 77 not in monitor.runtime.store.selections
+    assert "16-WINNER_3W-1" not in monitor.config.market_registry.pending
+
+
+def test_excluded_event_name_case_sensitive() -> None:
+    monitor = DeltaXMonitor(_config(), env={"DELTAX_TELEGRAM_GROUPS": ""})
+    row = _selection_row(
+        opp_id=78,
+        my_selection_id="16-WINNER_3W-1",
+        event_name="itf Challenger Prague",
+        opp_name="A",
+        odd=2.0,
+    )
+    changed = monitor.ingest_rows([row], now_ts=10.0)
+    assert changed == 0
+    assert 78 in monitor.runtime.store.selections
+
+
 def test_load_config_uses_my_selection_id_lists() -> None:
     config = load_config(env={"DELTAX_CONFIG_PATH": str(Path("config.yaml").resolve())})
     registry = config.market_registry
@@ -141,6 +171,7 @@ def test_load_config_uses_my_selection_id_lists() -> None:
     assert registry.should_process("16-WINNER_3W-1")
     assert not registry.should_process("16-WINNER_3W-2")
     assert len(config.tipsport_endpoints) >= 1
+    assert "ITF" in config.excluded_event_name_substrings
 
 
 def test_run_cycle_fetches_all_endpoints_in_sequence() -> None:
