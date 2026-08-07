@@ -11,8 +11,8 @@ cd "$ROOT"
 log() { printf '%s\n' "$*"; }
 
 any_running() {
-  "$ROOT/scripts/start_vps_worker.sh" status 2>/dev/null | grep -q 'running' && return 0
-  "$ROOT/scripts/start_vps_settle.sh" status 2>/dev/null | grep -q 'running' && return 0
+  "$ROOT/scripts/start_vps_worker.sh" status 2>/dev/null | grep -qE ' running pid ' && return 0
+  "$ROOT/scripts/start_vps_settle.sh" status 2>/dev/null | grep -qE ' running pid ' && return 0
   return 1
 }
 

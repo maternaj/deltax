@@ -52,7 +52,8 @@ read_pid() {
 is_running() {
   local pid
   pid="$(read_pid || true)"
-  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null \
+    && pgrep -f "${WORKER_SCRIPT}" 2>/dev/null | grep -qx "$pid"
 }
 
 cmd_start() {
