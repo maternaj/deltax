@@ -243,12 +243,15 @@ def test_format_drop_alert_message_pinnacle_source() -> None:
     row = _tracked(
         super_sport_name="Soccer",
         competition_name="England - Premier League",
-        match_url="https://www.pinnacle.com/en/soccer/match/123",
+        match_url=(
+            "https://www.ps3838.com/en/sports/soccer/stats/"
+            "England-Premier-League/Arsenal-vs-Chelsea/999001"
+        ),
     )
     hit = _drop_hit(row)
     msg = format_drop_alert_message(
         hit,
-        match_url_base="https://www.pinnacle.com/en/soccer/match/{event_id}",
+        match_url_base="https://www.ps3838.com/en",
         source="pinnacle",
     )
     assert msg.splitlines()[0] == "[PINN] ⚽ <b>England - Premier League</b>"

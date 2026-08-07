@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from deltax.parser import SelectionRow
+from deltax.pinnacle.urls import build_match_url
 
 
 def stable_opp_id(event_id: int, my_selection_id: str) -> int:
@@ -149,7 +150,9 @@ def _append_row(
     odd: float,
     line: dict[str, Any] | None,
     line_id: int | None,
-    match_url_template: str,
+    match_url_base: str,
+    match_url_style: str | None,
+    sport_slug_overrides: dict[int, str] | None,
     betting_enabled: bool,
 ) -> None:
     event_id = int(event["event_id"])
@@ -173,7 +176,14 @@ def _append_row(
             betting_enabled=betting_enabled,
             opp_type=None,
             opp_number=str(line.get("handicap_label") or line.get("points") or "") if line else None,
-            match_url=match_url_template.format(event_id=event_id),
+            match_url=build_match_url(
+                match_url_base=match_url_base,
+                sport=sport,
+                league=league,
+                event=event,
+                style=match_url_style,
+                sport_slug_overrides=sport_slug_overrides,
+            ),
             date_start=int(event["start_time_unix_ms"])
             if event.get("start_time_unix_ms") is not None
             else None,
@@ -197,7 +207,9 @@ def _flatten_period(
     league: dict[str, Any],
     event: dict[str, Any],
     period: dict[str, Any],
-    match_url_template: str,
+    match_url_base: str,
+    match_url_style: str | None,
+    sport_slug_overrides: dict[int, str] | None,
     main_lines_only: bool,
 ) -> None:
     sport_id = int(sport["sport_id"])
@@ -227,7 +239,9 @@ def _flatten_period(
                 odd=odd,
                 line=moneyline,
                 line_id=line_id,
-                match_url_template=match_url_template,
+                match_url_base=match_url_base,
+                match_url_style=match_url_style,
+                sport_slug_overrides=sport_slug_overrides,
                 betting_enabled=True,
             )
 
@@ -262,7 +276,9 @@ def _flatten_period(
                 odd=odd,
                 line=spread,
                 line_id=line_id,
-                match_url_template=match_url_template,
+                match_url_base=match_url_base,
+                match_url_style=match_url_style,
+                sport_slug_overrides=sport_slug_overrides,
                 betting_enabled=True,
             )
 
@@ -296,7 +312,9 @@ def _flatten_period(
                 odd=odd,
                 line=total,
                 line_id=line_id,
-                match_url_template=match_url_template,
+                match_url_base=match_url_base,
+                match_url_style=match_url_style,
+                sport_slug_overrides=sport_slug_overrides,
                 betting_enabled=True,
             )
 
@@ -317,7 +335,9 @@ def flatten_selections(
     league_blocklist: tuple[int, ...] = (),
     league_allow_name_substrings: tuple[str, ...] = (),
     league_block_name_substrings: tuple[str, ...] = (),
-    match_url_template: str = "https://www.pinnacle.com/en/soccer/match/{event_id}",
+    match_url_base: str = "https://www.ps3838.com/en",
+    match_url_style: str | None = None,
+    sport_slug_overrides: dict[int, str] | None = None,
 ) -> list[SelectionRow]:
     rows: list[SelectionRow] = []
     for sport in sports:
@@ -342,7 +362,9 @@ def flatten_selections(
                         league=league,
                         event=event,
                         period=period,
-                        match_url_template=match_url_template,
+                        match_url_base=match_url_base,
+                        match_url_style=match_url_style,
+                        sport_slug_overrides=sport_slug_overrides,
                         main_lines_only=main_lines_only,
                     )
     return rows

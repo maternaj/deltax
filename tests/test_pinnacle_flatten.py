@@ -28,7 +28,8 @@ def test_flatten_prematch_main_lines() -> None:
         sports,
         prematch_only=True,
         main_lines_only=True,
-        match_url_template="https://example.test/match/{event_id}",
+        match_url_base="https://www.ps3838.com/en",
+        sport_slug_overrides={29: "soccer"},
     )
     templates = {row.my_selection_id for row in rows}
     assert "29-0-MONEYLINE-HOME" in templates
@@ -38,6 +39,10 @@ def test_flatten_prematch_main_lines() -> None:
     assert "29-0-TOTAL-OVER" in templates
     assert rows[0].match_type == "PREMATCH"
     assert rows[0].tipsport_snapshot["source"] == "pinnacle"
+    assert rows[0].match_url.startswith(
+        "https://www.ps3838.com/en/sports/soccer/stats/England-Premier-League/"
+    )
+    assert rows[0].match_url.endswith("/999001")
 
 
 def test_flatten_skips_live_section_events() -> None:

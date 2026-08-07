@@ -67,6 +67,9 @@ class PinnacleSource:
         rows: list[SelectionRow] = []
         failed_requests = 0
         total_requests = 0
+        sport_slug_overrides = {
+            sport.sport_id: sport.name for sport in self.pinnacle.sports if sport.name
+        }
         for sport in self.pinnacle.sports:
             for market_kind in sport.market_kinds:
                 total_requests += 1
@@ -108,11 +111,8 @@ class PinnacleSource:
                         league_blocklist=sport.league_blocklist or self.pinnacle.league_blocklist,
                         league_allow_name_substrings=sport.league_allow_name_substrings,
                         league_block_name_substrings=sport.league_block_name_substrings,
-                        match_url_template=(
-                            self.config.match_url_base
-                            if "{event_id}" in self.config.match_url_base
-                            else f"{self.config.match_url_base}/{{event_id}}"
-                        ),
+                        match_url_base=self.config.match_url_base,
+                        sport_slug_overrides=sport_slug_overrides or None,
                     )
                 )
         ok = total_requests == 0 or failed_requests < total_requests

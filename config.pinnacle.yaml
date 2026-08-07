@@ -37,8 +37,8 @@ drop_tiers:
     implied_drop_pct: 8
 
 telegram:
-  # Generic event link (sport-specific paths vary on Pinnacle site)
-  match_url_base: https://www.pinnacle.com/en/
+  # PS3838 stats deeplink base (matches site generateSportsDetailsPageURL)
+  match_url_base: https://www.ps3838.com/en
   default_alert_groups: A
 
 markets:
