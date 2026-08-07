@@ -29,8 +29,22 @@ pinnacle_enabled() {
   "$ROOT/scripts/pinnacle_config_ready.sh"
 }
 
+# Pre-refactor workers (deltax_monitor.py / deltax_settle.py) are not managed by
+# worker_ctl; kill any orphans so they don't duplicate Tipsport alerts.
+kill_legacy_workers() {
+  local pid script
+  while read -r pid script; do
+    [[ -z "$pid" ]] && continue
+    log "Stopping legacy worker pid $pid ($script)"
+    kill "$pid" 2>/dev/null || true
+  done < <(pgrep -af '[Pp]ython.*deltax/workers/deltax_(monitor|settle)\.py' 2>/dev/null \
+    | grep -Ev 'monitor_tipsport|monitor_pinnacle|settle_tipsport' || true)
+  rm -f "$ROOT/workers/deltax_monitor.pid" "$ROOT/workers/deltax_settle.pid"
+}
+
 cmd_stop() {
   log "Stopping deltax production..."
+  kill_legacy_workers
   "$ROOT/scripts/start_vps_settle_tipsport.sh" stop || true
   "$ROOT/scripts/start_vps_monitor_pinnacle.sh" stop || true
   "$ROOT/scripts/start_vps_monitor_tipsport.sh" stop || true
