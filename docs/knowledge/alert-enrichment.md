@@ -131,7 +131,7 @@ Sample inspected from `workers/prematcher.tips/samples/baseline.json`.
 
 ## Reference: `tips_prematch_odds` (prematcher worker)
 
-Closest “capture everything useful” pattern in optagame repo (not magu — no magu tree in workspace).
+Closest “capture everything useful” pattern in the legacy optagame prematcher worker (reference only — deltax is standalone).
 
 **Path:** `workers/prematcher.tips/sql/001_create_tables.sql`  
 **Extractor:** `workers/prematcher.tips/prematcher_tips.py` → `extract_wanted_selections()`
