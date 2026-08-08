@@ -18,6 +18,31 @@ def build_my_selection_id(sport_id: int, period_key: str, market: str, side: str
     return f"{sport_id}-{period_key}-{market}-{side}"
 
 
+MARKET_EVENT_LABELS: dict[str, str] = {
+    "MONEYLINE": "Moneyline",
+    "SPREAD": "Handicap",
+    "TOTAL": "Over/Under",
+}
+
+
+def format_market_event_name(*, market: str, period: dict[str, Any]) -> str:
+    """Human-readable market label for Telegram line 2 (Tipsport uses event.name)."""
+    label = MARKET_EVENT_LABELS.get(market, market.replace("_", " ").title())
+    period_key = str(period.get("period_key") or "0")
+    name = period.get("name")
+    period_label = ""
+    if isinstance(name, str):
+        cleaned = name.strip()
+        if cleaned and not cleaned.isdigit():
+            generic = cleaned.casefold() in {"match", "game"}
+            if period_key != "0" or not generic:
+                period_label = cleaned
+    if not period_label and period_key != "0":
+        period_label = f"Period {period_key}"
+    if period_label:
+        return f"{period_label} · {label}"
+    return label
+
 def _is_truthy_flag(value: Any) -> bool:
     if value is None:
         return False
@@ -150,6 +175,7 @@ def _append_row(
     odd: float,
     line: dict[str, Any] | None,
     line_id: int | None,
+    market: str,
     match_url_base: str,
     match_url_style: str | None,
     sport_slug_overrides: dict[int, str] | None,
@@ -170,7 +196,7 @@ def _append_row(
             sport_name=str(sport.get("sport_name") or ""),
             super_sport_name=str(sport.get("sport_name") or ""),
             match_type="PREMATCH",
-            event_name=str(period.get("name") or period.get("period_key") or "Match"),
+            event_name=format_market_event_name(market=market, period=period),
             opp_name=opp_name,
             odd=odd,
             betting_enabled=betting_enabled,
@@ -239,6 +265,7 @@ def _flatten_period(
                 odd=odd,
                 line=moneyline,
                 line_id=line_id,
+                market="MONEYLINE",
                 match_url_base=match_url_base,
                 match_url_style=match_url_style,
                 sport_slug_overrides=sport_slug_overrides,
@@ -276,6 +303,7 @@ def _flatten_period(
                 odd=odd,
                 line=spread,
                 line_id=line_id,
+                market="SPREAD",
                 match_url_base=match_url_base,
                 match_url_style=match_url_style,
                 sport_slug_overrides=sport_slug_overrides,
@@ -312,6 +340,7 @@ def _flatten_period(
                 odd=odd,
                 line=total,
                 line_id=line_id,
+                market="TOTAL",
                 match_url_base=match_url_base,
                 match_url_style=match_url_style,
                 sport_slug_overrides=sport_slug_overrides,

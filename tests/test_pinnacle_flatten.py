@@ -39,6 +39,11 @@ def test_flatten_prematch_main_lines() -> None:
     assert "29-0-TOTAL-OVER" in templates
     assert rows[0].match_type == "PREMATCH"
     assert rows[0].tipsport_snapshot["source"] == "pinnacle"
+    assert rows[0].event_name == "Moneyline"
+    templates = {row.my_selection_id.rsplit("-", 1)[0]: row.event_name for row in rows}
+    assert templates["29-0-MONEYLINE"] == "Moneyline"
+    assert templates["29-0-SPREAD"] == "Handicap"
+    assert templates["29-0-TOTAL"] == "Over/Under"
     assert rows[0].match_url.startswith(
         "https://www.ps3838.com/en/sports/soccer/matchup/England-Premier-League/"
     )

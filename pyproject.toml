@@ -37,3 +37,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: live Pinnacle API probes (opt-in with DELTAX_PINNACLE_PROBE=1)",
+]
+addopts = "-m 'not integration'"

@@ -151,6 +151,34 @@ class PinnacleClient:
         return self._session
 
     def fetch_events(self, sport_id: int, market_kind: int) -> dict[str, Any] | None:
+        return self._fetch_events_body(
+            sport_id,
+            market_kind,
+            purpose=f"market bucket {market_kind} odds for sport {sport_id}",
+        )
+
+    def fetch_event_detail(
+        self,
+        sport_id: int,
+        event_id: int,
+        *,
+        market_kind: int = 1,
+    ) -> dict[str, Any] | None:
+        return self._fetch_events_body(
+            sport_id,
+            market_kind,
+            purpose=f"match detail for event {event_id}",
+            event_id=event_id,
+        )
+
+    def _fetch_events_body(
+        self,
+        sport_id: int,
+        market_kind: int,
+        *,
+        purpose: str,
+        event_id: int | None = None,
+    ) -> dict[str, Any] | None:
         try:
             capture = self._origins.fetch(
                 self.session,
@@ -158,9 +186,10 @@ class PinnacleClient:
                     sport_id,
                     token,
                     market_kind=market_kind,
+                    event_id=event_id,
                     origin=origin,
                 ),
-                purpose=f"market bucket {market_kind} odds for sport {sport_id}",
+                purpose=purpose,
                 token_factory=self._tokens,
                 attempts=self.fresh_attempts,
                 max_origin_age_seconds=self.max_origin_age_seconds,
@@ -168,12 +197,18 @@ class PinnacleClient:
             body = capture.body
             if isinstance(body, dict):
                 return body
-            logger.error("Pinnacle events response is not a JSON object sport_id=%s mk=%s", sport_id, market_kind)
+            logger.error(
+                "Pinnacle events response is not a JSON object sport_id=%s mk=%s event_id=%s",
+                sport_id,
+                market_kind,
+                event_id,
+            )
             return None
         except FreshnessError:
             logger.exception(
-                "Pinnacle fetch failed sport_id=%s mk=%s",
+                "Pinnacle fetch failed sport_id=%s mk=%s event_id=%s",
                 sport_id,
                 market_kind,
+                event_id,
             )
             return None

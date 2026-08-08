@@ -253,6 +253,10 @@ class DeltaXMonitor:
             return {"ok": False, "selections": 0, "alerts": 0, "source": self.config.source}
 
         now_ts = time.time()
+        sport_counts: dict[str, int] = {}
+        for row in rows:
+            sport = str(row.super_sport_name or row.sport_name or "?")
+            sport_counts[sport] = sport_counts.get(sport, 0) + 1
         changed = self.ingest_rows(rows, now_ts=now_ts)
         selection_count = len(rows)
         del rows
@@ -265,6 +269,7 @@ class DeltaXMonitor:
             "changed": changed,
             "alerts": alerts,
             "source": self.config.source,
+            "sport_counts": sport_counts,
         }
 
     def run_forever(self) -> None:
@@ -294,14 +299,19 @@ class DeltaXMonitor:
             started = time.monotonic()
             stats = self.run_cycle()
             if stats.get("ok"):
+                sport_counts = stats.get("sport_counts") or {}
+                sport_suffix = (
+                    f" sports={sport_counts}" if sport_counts else ""
+                )
                 logger.info(
-                    "Cycle OK source=%s selections=%s tracked=%s markets=%s changed=%s alerts=%s",
+                    "Cycle OK source=%s selections=%s tracked=%s markets=%s changed=%s alerts=%s%s",
                     stats.get("source"),
                     stats.get("selections"),
                     stats.get("tracked"),
                     stats.get("markets"),
                     stats.get("changed"),
                     stats.get("alerts"),
+                    sport_suffix,
                 )
             else:
                 logger.error("Cycle failed — %s fetch returned no data", stats.get("source"))

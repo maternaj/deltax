@@ -338,3 +338,76 @@ def sport_by_id(sports: list[dict[str, Any]], sport_id: int) -> dict[str, Any] |
         if sport.get("sport_id") == sport_id:
             return sport
     return None
+
+
+def normalize_detail_feed(
+    body: Any,
+    *,
+    sport_name: str,
+    league_name: str,
+    market_section: str = "detail",
+) -> dict[str, Any]:
+    detail = body.get("e") if isinstance(body, dict) else None
+    if not isinstance(detail, list) or len(detail) < 5:
+        raise PinnacleProtocolError("match-detail response has no compact 'e' row")
+    sport_id = _integer(_at(detail, 0))
+    league_id = _integer(_at(detail, 1))
+    event_row = _at(detail, 3)
+    if sport_id is None or league_id is None:
+        raise PinnacleProtocolError("match-detail response has no sport/league ID")
+    event = normalize_event(event_row, market_section=market_section)
+    return {
+        "sport_id": sport_id,
+        "sport_name": sport_name,
+        "live_cursor": _at(detail, 4),
+        "group": _at(detail, 2),
+        "leagues": [
+            {
+                "league_id": league_id,
+                "league_name": league_name,
+                "events": [event],
+            }
+        ],
+    }
+
+
+def parse_corner_event_from_detail(body: Any, *, market_section: str = "normal") -> dict[str, Any] | None:
+    """Return the corners sub-event from a match-detail response (`ce` row), if present."""
+    corner = body.get("ce") if isinstance(body, dict) else None
+    if not isinstance(corner, list) or len(corner) < 4:
+        return None
+    event_row = _at(corner, 3)
+    if not isinstance(event_row, list):
+        return None
+    try:
+        return normalize_event(event_row, market_section=market_section)
+    except PinnacleProtocolError:
+        return None
+
+
+def bulk_feed_mentions_corners(body: Any) -> bool:
+    """True when the compact l/n snapshot JSON contains corner-related strings."""
+    if not isinstance(body, dict):
+        return False
+    for section in ("l", "n"):
+        rows = body.get(section)
+        if not isinstance(rows, list):
+            continue
+        for sport_row in rows:
+            league_rows = _at(sport_row, 2)
+            if not isinstance(league_rows, list):
+                continue
+            for league_row in league_rows:
+                league_name = _text(_at(league_row, 1))
+                if league_name and "corner" in league_name.casefold():
+                    return True
+                event_rows = _at(league_row, 2)
+                if not isinstance(event_rows, list):
+                    continue
+                for event_row in event_rows:
+                    home = _text(_at(event_row, 1))
+                    away = _text(_at(event_row, 2))
+                    match_name = f"{home or ''} {away or ''}".casefold()
+                    if "corner" in match_name:
+                        return True
+    return False

@@ -132,3 +132,55 @@ def mixed_live_and_prematch_body() -> dict[str, Any]:
         "e": None,
         "e1": None,
     }
+
+
+def corner_detail_period() -> list[Any]:
+    return [
+        [[["4.5", 4.5, "1.684", "2.100", 3684887437, 0, 100.0, 0]], [["3.5", 3.5, "1.704", "2.050", 3684887437, 0, 100.0, 0]]],
+        None,
+        [[0.0, 0.0, "0.0", "1.854", "1.813", 0, 0, 3684887437, 0, 300.0, 1]],
+        [["9.5", 9.5, "1.934", "1.746", 3684887437, 0, 100.0, 1]],
+        ["2.50", "2.80", "3.20", 3684887437, 0, 100.0, 1],
+        0,
+        "Match",
+        1,
+        0,
+        0,
+        [0, 0],
+        7,
+        [0, 0],
+        [0, 0],
+        0,
+    ]
+
+
+def corner_event(
+    event_id: int = 1633377443,
+    home: str = "Coritiba (Corners)",
+    away: str = "Chapecoense (Corners)",
+) -> list[Any]:
+    row = prematch_event(event_id=event_id, home=home, away=away)
+    row[8] = {"0": corner_detail_period()}
+    return row
+
+
+def prematch_parent_detail_body(
+    *,
+    parent_event_id: int = 1632998976,
+    corner_event_id: int = 1633377443,
+) -> dict[str, Any]:
+    parent = prematch_event(event_id=parent_event_id, home="Coritiba", away="Chapecoense")
+    return {
+        "u": None,
+        "l": None,
+        "n": None,
+        "e": [29, 6310, 0, parent, 0],
+        "e1": None,
+        "pt": 0,
+        "ps": None,
+        "d": None,
+        "hle": [],
+        "ce": [29, 6310, 0, corner_event(event_id=corner_event_id), 0],
+        "be": None,
+        "ces": None,
+    }
