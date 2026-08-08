@@ -1,4 +1,4 @@
-"""Exploratory probes: live/in-play soccer odds via Pinnacle compact API."""
+"""Exploratory probes: live/in-play odds via Pinnacle compact API."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from deltax.pinnacle.flatten import flatten_selections, is_prematch_event
 from deltax.pinnacle.parser import normalize_sport_feed
 from pinnacle_feeds import live_event, mixed_live_and_prematch_body
-from pinnacle_probe import probe_soccer_live_odds
+from pinnacle_probe import TENNIS_SPORT_ID, probe_tennis_live_odds
 
 
 def test_live_section_events_are_filtered_by_flatten_and_is_prematch() -> None:
@@ -65,21 +65,26 @@ def test_live_event_fixture_carries_open_lines() -> None:
     os.environ.get("DELTAX_PINNACLE_PROBE", "").lower() not in {"1", "true", "yes"},
     reason="set DELTAX_PINNACLE_PROBE=1 to run live Pinnacle in-play probes",
 )
-def test_live_api_exposes_inplay_soccer_odds_outside_flatten_pipeline() -> None:
+def test_live_api_exposes_inplay_tennis_odds_outside_flatten_pipeline() -> None:
     from deltax.pinnacle.client import PinnacleClient
 
     client = PinnacleClient(fresh_attempts=2, max_origin_age_seconds=5.0)
     try:
-        result = probe_soccer_live_odds(client)
+        result = probe_tennis_live_odds(client)
     finally:
         client.close()
 
-    assert result.live_events > 0, "expected mk=2 soccer feed to include live-section events"
+    if result.live_events == 0:
+        pytest.skip("no live tennis events in mk=2 feed right now")
+
+    assert result.sport_id == TENNIS_SPORT_ID
     assert result.live_events_with_lines > 0, (
-        "expected live events to carry moneyline/spread/total odds in normalized parser output"
+        "expected live tennis events to carry moneyline/spread/total odds in normalized parser output"
     )
     assert result.sample_live_match
-    assert result.sample_live_odds, "expected at least one live moneyline price > 1.0"
+    assert result.sample_live_odds, (
+        "expected at least one live tennis price > 1.0 (moneyline or main line)"
+    )
     assert result.flatten_live_rows == 0, (
         "current flatten_selections intentionally skips market_section=live; "
         "live odds must be consumed from normalized feeds or a future in-play flatten path"
