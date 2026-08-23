@@ -36,7 +36,7 @@ from deltax.settle.db import (
 )
 from deltax.settle.results_api import ResultCell, match_has_results, parse_result_cells
 from deltax.settle.void_rules import SettlementDraft, apply_void_rules
-from deltax.tipsport_client import TipsportClient
+from deltax.tipsport_client import TipsportClient, default_settle_state_file
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,10 @@ class DeltaXSettle:
     ):
         self.config = config
         self.env = env or dict(os.environ)
-        self.client = client or TipsportClient(config.tipsport_base_url)
+        self.client = client or TipsportClient(
+            config.tipsport_base_url,
+            state_file=default_settle_state_file(),
+        )
         self.running = True
 
     def stop(self) -> None:
@@ -267,6 +270,7 @@ class DeltaXSettle:
 
             elapsed = time.monotonic() - started
             sleep_for = max(settle.sleep_seconds - elapsed, 1.0)
+            logger.debug("Settle sleeping %.0fs until next cycle", sleep_for)
             deadline = time.monotonic() + sleep_for
             while self.running:
                 remaining = deadline - time.monotonic()

@@ -49,6 +49,30 @@ def test_fetch_recovers_from_401_by_invalidating_cache_and_bootstrapping(tmp_pat
     bootstrap.assert_called_once()
 
 
+def test_fetch_does_not_reset_scraper_on_404(tmp_path: Path) -> None:
+    state_file = tmp_path / "tipsport_scraper_state.json"
+    state_file.write_text("{}", encoding="utf-8")
+
+    scraper = MagicMock()
+    scraper.get.return_value = _mock_response(404)
+
+    client = TipsportClient("https://www.tipsport.cz", state_file=str(state_file), max_retries=2)
+
+    with (
+        patch.object(client, "_load_scraper", return_value=scraper) as load_scraper,
+        patch.object(client, "_reset_scraper") as reset_scraper,
+        patch.object(client, "_bootstrap_scraper") as bootstrap,
+        patch("deltax.tipsport_client.exponential_backoff"),
+    ):
+        result = client.fetch("/rest/offer/v3/matches/123?fromResults=true")
+
+    assert result is None
+    assert load_scraper.call_count == 2
+    reset_scraper.assert_not_called()
+    bootstrap.assert_not_called()
+    assert state_file.exists()
+
+
 def test_fetch_does_not_invalidate_cache_on_503(tmp_path: Path) -> None:
     state_file = tmp_path / "tipsport_scraper_state.json"
     state_file.write_text("{}", encoding="utf-8")

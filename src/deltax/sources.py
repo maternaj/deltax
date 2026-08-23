@@ -10,7 +10,7 @@ from deltax.parser import SelectionRow, parse_selections
 from deltax.pinnacle.client import PinnacleClient
 from deltax.pinnacle.flatten import flatten_selections
 from deltax.pinnacle.parser import normalize_sport_feed, sport_by_id
-from deltax.tipsport_client import TipsportClient
+from deltax.tipsport_client import TipsportClient, default_monitor_state_file
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,10 @@ class TipsportSource:
         client: TipsportClient | None = None,
     ) -> None:
         self.config = config
-        self.client = client or TipsportClient(config.tipsport_base_url)
+        self.client = client or TipsportClient(
+            config.tipsport_base_url,
+            state_file=default_monitor_state_file(),
+        )
 
     def fetch_selections(self) -> tuple[list[SelectionRow], bool]:
         rows: list[SelectionRow] = []

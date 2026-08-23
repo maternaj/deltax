@@ -50,9 +50,20 @@ class ScraperState:
         )
 
 
-def default_state_file() -> str:
+def default_state_file(*, role: str = "") -> str:
     root = pathlib.Path(__file__).resolve().parents[2]
-    return str(root / "state" / "tipsport_scraper_state.json")
+    name = "tipsport_scraper_state"
+    if role:
+        name = f"{name}_{role}"
+    return str(root / "state" / f"{name}.json")
+
+
+def default_monitor_state_file() -> str:
+    return default_state_file(role="monitor")
+
+
+def default_settle_state_file() -> str:
+    return default_state_file(role="settle")
 
 
 def get_clean_user_agent() -> str:
@@ -304,8 +315,7 @@ class TipsportClient:
 
             if status_code in SESSION_INVALID_STATUS_CODES:
                 invalidate_saved_scraper(self.state_file)
-
-            self._reset_scraper()
+                self._reset_scraper()
             attempt += 1
             if attempt < self.max_retries:
                 logger.info("Tipsport fetch attempt %d/%d", attempt + 1, self.max_retries)
