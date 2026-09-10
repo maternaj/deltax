@@ -1,5 +1,7 @@
 # QX-336 — Pinnacle prematch monitor (production rollout)
 
+> **Status (2026-09-10):** Phase 1 **deployed**. Pinnacle monitor running in production (soccer + tennis). Settlement and `source` DB column remain out of scope.
+
 Linear: [QX-336](https://linear.app/quantixx/issue/QX-336/pinnacle-odds-drop-monitor-adapt-pinn-insipirationpy-to-deltax-style)
 
 ## Architecture (post-refactor)
@@ -58,11 +60,12 @@ Reference sport IDs: probe with `scripts/pinnacle_list_sports.py` (if added) or 
 | Live Pinnacle fetch (mk=0/1) | OK — 7k+ soccer selections |
 | 5-min soak (in-process) | 14 alerts, Telegram OK |
 | Tipsport production path | Unchanged behaviour |
-| Unit tests | 100+ passing |
+| Unit tests | 122 passing |
+| Production (2026-09-10) | 3/3 workers UP; ~8.5k Pinnacle selections/cycle |
 
 ## Not in scope (QX-336 phase 1)
 
-- Pinnacle settlement worker
+- Pinnacle settlement worker — tracked as [QX-382](https://linear.app/quantixx/issue/QX-382/pinnacle-settlement-worker-phase-2-deferred) (deferred)
 - `source` column on `deltax_alerts` (bookmaker only in Telegram message today)
 - Per-match Pinnacle detail fetch in hot path
 
@@ -86,4 +89,4 @@ Log/pid files: `workers/deltax_monitor_tipsport.nohup.log`, `workers/deltax_moni
 3. Rename local `config.yaml` → `config.tipsport.yaml` if upgrading in place
 4. Add `config.pinnacle.yaml` from example when ready
 5. `./scripts/start_vps_production.sh restart`
-6. `~/vps-ops/status.sh --brief` — expect deltax 2/2 until Pinnacle configured, then 3/3
+6. `~/vps-ops/status.sh --brief` — expect deltax **3/3** when Pinnacle configured (current production)

@@ -23,6 +23,7 @@ from deltax.db import (
     validate_connection,
 )
 from deltax.markets import event_name_excluded
+from deltax.settle.asian_lines import should_skip_quarter_handicap
 from deltax.messages import format_drop_alert_message, format_match_url
 from deltax.parser import SelectionRow, tracked_from_row, tipsport_snapshot_from_tracked
 from deltax.sources import OddsSource, build_odds_source
@@ -100,6 +101,12 @@ class DeltaXMonitor:
                 continue
             registry.register_seen(row.my_selection_id)
             if not registry.should_process(row.my_selection_id):
+                continue
+            if should_skip_quarter_handicap(
+                my_selection_id=row.my_selection_id,
+                opp_name=row.opp_name,
+                opp_number=row.opp_number,
+            ):
                 continue
             seen.add(row.opp_id)
             tracked = tracked_from_row(row)

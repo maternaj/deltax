@@ -6,6 +6,8 @@ selection prices in memory, detects significant shortening drops, sends HTML Tel
 
 Standalone repo at `~/deltax/` — no runtime imports from optagame.
 
+**Production (gev-plus, 2026-09-10):** 3/3 workers UP — Tipsport monitor, Pinnacle monitor (soccer + tennis), Tipsport settler. 122 unit tests passing.
+
 ## Workers
 
 | Process | Entrypoint | Config | Settlement |
@@ -46,7 +48,7 @@ See existing bootstrap under `sql/` (`00_create_deltax_writer.sql`, `02_create_d
 ### Config files
 
 - **`config.tipsport.yaml`** — Tipsport endpoints, tiers, markets, settler schedule
-- **`config.pinnacle.yaml`** — Pinnacle sports, tiers, markets (stub until tuned; see `config.pinnacle.yaml.example`)
+- **`config.pinnacle.yaml`** — Pinnacle sports, tiers, markets (production: soccer `29` + tennis `33`; see `config.pinnacle.yaml.example`)
 - **`.env`** — `DELTAX_DATABASE_URL`, `DELTAX_TELEGRAM_GROUPS`, optional overrides
 
 Production ops: [`how_to_run.md`](how_to_run.md) · Pinnacle rollout: [`docs/qx-336-production.md`](docs/qx-336-production.md)
@@ -63,7 +65,7 @@ Foreground:
 
 ```bash
 .venv/bin/python workers/deltax_monitor_tipsport.py
-.venv/bin/python workers/deltax_monitor_pinnacle.py   # after config.pinnacle.yaml ready
+.venv/bin/python workers/deltax_monitor_pinnacle.py
 .venv/bin/python workers/deltax_settle_tipsport.py --once
 ```
 

@@ -39,7 +39,7 @@ drop_tiers:
 telegram:
   # PS3838 matchup deeplink base (matches site generateSportsDetailsPageURL)
   match_url_base: https://www.ps3838.com/en
-  default_alert_groups: A
+  default_alert_groups: B
 
 markets:
   wanted:

@@ -1,13 +1,13 @@
 # DeltaX alert enrichment — knowledge base
 
-> Status: **planned** (not implemented). Captured 2026-07-19 after first successful alerts.
-> Goal: store richer context per alert — Tipsport selection snapshot + drop timing from monitor history.
+> Status: **Phase 1 implemented** (schema + persist pipeline). Captured 2026-07-19; updated 2026-09-10.
+> Remaining gaps: `source` column (Tipsport vs Pinnacle), `competition_id`, `market_period` as typed columns.
 
 ## Problem
 
-`deltax_alerts` stores identifiers, Czech labels, drop math, and delivery metadata, but drops most useful Tipsport context and all monitor-side timestamps. Telegram messages show kickoff (`date_start`) but the DB does not.
+`deltax_alerts` originally stored only identifiers, Czech labels, drop math, and delivery metadata. **Phase 1 enrichment added** match context, selection metadata, drop timestamps, and `tipsport_snapshot` JSONB.
 
-Detection works; the gap is **what we persist at alert time**.
+Telegram still shows richer kickoff formatting than some legacy queries expect — but `kickoff_at`, `baseline_observed_at`, and related columns are persisted.
 
 ## Current state
 
@@ -17,7 +17,7 @@ Detection works; the gap is **what we persist at alert time**.
 GET /rest/external/offer/v1/matches?idSuperSport=16&allEvents=true
 ```
 
-Configured in `config.yaml`. Same bulk prematch feed used by `workers/prematcher.tips`.
+Configured in `config.tipsport.yaml`. Same bulk prematch feed family as `workers/prematcher.tips`.
 
 ### JSON shape
 
@@ -29,56 +29,26 @@ matches[]
 
 ### Parser today (`src/deltax/parser.py`)
 
-`SelectionRow` — 12 fields extracted:
-
-| Field | JSON path |
-|-------|-----------|
-| `opp_id` | `opps[].id` |
-| `match_id` | `matches[].id` |
-| `market_type` | derived from `mySelectionId` regex |
-| `match_name` | `matches[].name` |
-| `competition_name` | `matches[].nameCompetition` |
-| `event_name` | `events[].name` |
-| `opp_name` | `opps[].name` |
-| `odd` | `opps[].odd` |
-| `betting_enabled` | `opps[].bettingEnabled` |
-| `match_url` | `matches[].matchUrl` |
-| `my_selection_id` | `events[].mySelectionId` |
-| `date_start` | `matches[].dateStart` (ms epoch) |
-
-**Not parsed:** `events[].id`, all other match/opp fields.
+`TrackedSelection` / `SelectionRow` — match, event, and opp fields including `event_id`, participants, sport names, `date_start`, `opp_type`, `opp_number`, `betting_enabled`. Snapshot JSON built at persist time via `tipsport_snapshot_from_tracked()`.
 
 ### DB today (`sql/01_create_deltax_alerts.sql`)
 
-| Column | Source |
-|--------|--------|
-| `alert_id`, `created_at` | DB |
-| `opp_id`, `match_id`, `market_type` | `DropHit` |
-| `match_name`, `competition_name`, `event_name`, `opp_name` | `SelectionRow` |
-| `baseline_odds`, `current_odds`, `drop_pct` | computed in `drop_detector` |
-| `tier_window_seconds`, `tier_drop_pct` | config tier |
-| `match_url`, `message` | alert pipeline |
-| `telegram_ok`, `telegram_groups` | delivery |
+| Column group | Examples |
+|--------------|----------|
+| Identity | `opp_id`, `event_id`, `match_id`, `my_selection_id` |
+| Match context | `match_name`, `home_participant`, `visiting_participant`, `competition_name`, `sport_name`, `kickoff_at`, `match_url` |
+| Selection | `event_name`, `opp_name`, `opp_type`, `opp_number`, `betting_enabled_at_alert` |
+| Drop math | `odds_previous`, `odds_now`, `drop_pct`, `implied_drop_pct`, tier columns |
+| Drop timing | `baseline_observed_at`, `current_observed_at` |
+| Snapshot | `tipsport_snapshot` JSONB |
+| Settlement | `odds_at_off`, `selection_result`, `result_flag`, … |
+| Delivery | `message`, `telegram_ok`, `telegram_groups` |
 
-### Parsed but not stored in DB
+### Still not in DB (when implementing Phase 2)
 
-- `date_start` — Telegram only (`messages.format_kickoff`)
-- `my_selection_id` — only derived `market_type` stored
-- `betting_enabled` — runtime gate only (suspended selections skip history)
-- `odd` — in-memory; alert stores `current_odds` from history (should match at fire time)
-
-### Monitor-only data (not in Tipsport JSON)
-
-In-memory `PriceSample(ts, odd)` history in `drop_detector.py`:
-
-| Derivable at alert | Meaning |
-|--------------------|---------|
-| `baseline_observed_at` | when baseline sample was taken |
-| `current_observed_at` | when current sample was taken (~ poll time) |
-| `previous_odds` | `history[-2].odd` when tier window = 0 (N vs N-1) |
-| `seconds_since_baseline` | `current_ts - baseline_ts` |
-
-**Naming clarity:** `baseline_odds` = original odds at window start; `current_odds` = odds at alert. Both are already stored; timestamps are not.
+- `source` — bookmaker only in Telegram prefix (`[TIPS]` / `[PINN]`) today
+- `competition_id`, `market_period` as typed columns (available in JSONB snapshot)
+- Pinnacle-specific snapshot shape (uses same insert path; snapshot content differs)
 
 ---
 
@@ -146,45 +116,11 @@ Do not duplicate prematcher for historical curves; join on `opp_id` / `match_id`
 
 ## Recommended implementation
 
-### Phase 1 — typed columns (preferred first step)
+### Phase 1 — typed columns ✅ done
 
-Migration: `sql/04_enrich_deltax_alerts.sql`
+Implemented in `sql/01_create_deltax_alerts.sql` + `src/deltax/monitor.py` persist path. Column renames vs original design: `odds_previous` / `odds_now` (was baseline/current).
 
-**Match context**
-
-- `date_start BIGINT`
-- `kickoff_at TIMESTAMPTZ GENERATED` from `date_start`
-- `competition_id INT`
-- `home_participant`, `visiting_participant TEXT`
-- `sport_name`, `super_sport_name TEXT` (or IDs)
-- `match_type TEXT`
-
-**Market / selection context**
-
-- `event_id BIGINT`
-- `my_selection_id TEXT`
-- `market_period SMALLINT` — parsed from `mySelectionId` suffix
-- `opp_type TEXT`, `opp_number TEXT`
-- `betting_enabled_at_alert BOOLEAN`
-
-**Drop timing**
-
-- `baseline_observed_at TIMESTAMPTZ`
-- `current_observed_at TIMESTAMPTZ`
-- `previous_odds NUMERIC(12,4)` — for tier window = 0
-
-**Code changes**
-
-1. Extend `SelectionRow` — mirror prematcher extract (no market filter; monitor all selections).
-2. Extend `DropHit` with `baseline_ts`, `current_ts`, optional `previous_odds`.
-3. Change `_baseline_for_tier()` to return `(odd, ts)` not just odd.
-4. Widen `SQL_INSERT_ALERT`, `_persist_alert()`, `format_drop_alert_message()`.
-5. Update `deltax_writer` column grants for new INSERT columns.
-6. Tests: parser, drop detector timestamps, persist params.
-
-**Effort:** ~half day for Phase 1.
-
-### Phase 2 — JSONB overflow (optional)
+### Phase 2 — remaining typed columns (optional)
 
 ```sql
 tipsport_snapshot JSONB   -- full match+event+opp dict at alert time
@@ -192,7 +128,7 @@ tipsport_snapshot JSONB   -- full match+event+opp dict at alert time
 drop_context JSONB        -- {baseline_ts, current_ts, tier, history_tail: [{ts, odd}, ...]}
 ```
 
-Use for debugging / forward compatibility. Keep Phase 1 columns for anything queried or indexed.
+Use for debugging / forward compatibility. **`tipsport_snapshot JSONB` already stores match+event+opp dict at alert time.**
 
 ### Phase 3 — do not merge with prematcher
 

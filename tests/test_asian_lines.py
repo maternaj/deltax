@@ -6,7 +6,10 @@ from pathlib import Path
 from deltax.settle.asian_lines import (
     is_asian_market,
     is_quarter_line_alert,
+    is_quarter_line_number,
     is_quarter_line_opp,
+    parse_line_value,
+    should_skip_quarter_handicap,
 )
 
 QUARTER_LINE_NAMES = (
@@ -18,6 +21,12 @@ QUARTER_LINE_NAMES = (
     "Piast Gliwice -0.25 (-0.0, -0.5)",
     "Radom -1.25 (-1.0, -1.5)",
     "Piast Gliwice +0.75 (+0.5, +1.0)",
+    "VPS 0-0.5",
+    "Oita Trinita 0-0.5",
+    "Over 2-2.5",
+    "Under 2-2.5",
+    "0-0.5",
+    "0.5-1",
 )
 
 WHOLE_OR_HALF_NAMES = (
@@ -80,3 +89,54 @@ def test_fixture_opp_name_examples() -> None:
             assert not is_quarter_line_opp(name)
         else:
             raise AssertionError(f"Unhandled fixture name: {name}")
+
+
+def test_is_quarter_line_number() -> None:
+    assert is_quarter_line_number(0.25)
+    assert is_quarter_line_number(-1.75)
+    assert is_quarter_line_number(2.75)
+    assert not is_quarter_line_number(0.5)
+    assert not is_quarter_line_number(-2.0)
+    assert not is_quarter_line_number(1.5)
+
+
+def test_parse_line_value() -> None:
+    assert parse_line_value("-1.75") == -1.75
+    assert parse_line_value("2,25") == 2.25
+    assert parse_line_value("Team A -0.5") == -0.5
+    assert parse_line_value("Over 2.25") == 2.25
+    assert parse_line_value("VPS 0-0.5") == 0.25
+    assert parse_line_value("0-0.5") == 0.25
+    assert parse_line_value("0.5-1") == 0.75
+    assert parse_line_value("Over 2-2.5") == 2.25
+
+
+def test_should_skip_quarter_handicap_tipsport_and_pinnacle() -> None:
+    assert should_skip_quarter_handicap(
+        my_selection_id="16-ASIAN_TOTAL-1",
+        opp_name="Více než 2.25 (2.0, 2.5)",
+    )
+    assert should_skip_quarter_handicap(
+        my_selection_id="29-0-SPREAD-HOME",
+        opp_name="Home -1.75",
+        opp_number="-1.75",
+    )
+    assert should_skip_quarter_handicap(
+        my_selection_id="29-0-SPREAD-AWAY",
+        opp_name="VPS 0-0.5",
+        opp_number="0-0.5",
+    )
+    assert should_skip_quarter_handicap(
+        my_selection_id="29-0-TOTAL-OVER",
+        opp_name="Over 2-2.5",
+        opp_number="2-2.5",
+    )
+    assert not should_skip_quarter_handicap(
+        my_selection_id="29-0-SPREAD-HOME",
+        opp_name="Home -1.5",
+        opp_number="-1.5",
+    )
+    assert not should_skip_quarter_handicap(
+        my_selection_id="29-0-MONEYLINE-HOME",
+        opp_name="Home",
+    )

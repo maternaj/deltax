@@ -30,7 +30,7 @@ Same bulk prematch family as `workers/prematcher.tips`. Soccer-only, full premat
 
 ## Feed coverage (measured 2026-07-21)
 
-Live comparison on VPS (`TipsportClient` + `parse_selections` + current `config.yaml` market lists):
+Live comparison on VPS (`TipsportClient` + `parse_selections` + current `config.tipsport.yaml` market lists):
 
 | Endpoint | Raw selections | Matches | After blacklist | Soccer processed | Wanted-template rows | Enabled + `max_odds≤5` |
 |----------|----------------|---------|-----------------|------------------|----------------------|-------------------------|
@@ -118,7 +118,7 @@ To alert **per selection line** would require a code change (e.g. dedup key `(ma
 | `monitor.max_odds` | 5.0 | Skips selections with current odds &gt; cap before tier eval |
 | `markets.blacklisted` | 177 templates | Never processed; includes e.g. `16-WINNER_2W-1` |
 | `markets.wanted` | 35 soccer templates | Explicit allow-list entries; **pending** is also processed |
-| `markets.pending` | auto-grown | Any non-blacklisted unknown `my_selection_id` is monitored and appended to `config.yaml` |
+| `markets.pending` | auto-grown | Any non-blacklisted unknown `my_selection_id` is monitored and appended to `config.tipsport.yaml` |
 | `monitor.selection_ttl_seconds` | 600 | Purges in-memory state when absent from feed; hurts long-window baselines on small/rotating feeds |
 | `betting_enabled=false` | runtime | Suspended selections skip history updates |
 
@@ -128,7 +128,7 @@ To alert **per selection line** would require a code change (e.g. dedup key `(ma
 
 When investigating “too few alerts”, verify in order:
 
-1. **Process up:** `./scripts/start_vps_worker.sh status`
+1. **Process up:** `./scripts/start_vps_monitor_tipsport.sh status` (or `./scripts/start_vps_production.sh status`)
 2. **Fetch OK:** log line `Cycle OK … endpoints_failed=0`
 3. **Selection count:** compare `selections=` to expected endpoint (see table above)
 4. **Changes vs alerts:** many cycles with `changed=N alerts=0` is normal if tiers/dedup filter; abnormal if `changed=0` always on full feed
@@ -158,7 +158,22 @@ drop_tiers:
     drop_pct: 20
 ```
 
-**Current implied-only (2026-07-21 afternoon):**
+**Current implied-only (production 2026-09):**
+
+```yaml
+drop_tiers:
+  - window_seconds: 0
+    drop_pct: 0
+    implied_drop_pct: 4
+  - window_seconds: 180
+    drop_pct: 0
+    implied_drop_pct: 5
+  - window_seconds: 300
+    drop_pct: 0
+    implied_drop_pct: 8
+```
+
+**Previous implied-only (2026-07-21 afternoon):**
 
 ```yaml
 drop_tiers:
@@ -181,15 +196,15 @@ drop_tiers:
 - Review `markets.blacklisted` for intentionally excluded templates
 - Increase `selection_ttl_seconds` if using featured feed and long windows matter
 
-Restart after config change: `./scripts/start_vps_worker.sh restart`
+Restart after config change: `./scripts/start_vps_monitor_tipsport.sh restart` (or `./scripts/start_vps_production.sh restart`)
 
 ## Related files
 
 | File | Role |
 |------|------|
-| `config.yaml` | Endpoints, tiers, markets, refresh, TTL, max odds |
+| `config.tipsport.yaml` | Endpoints, tiers, markets, refresh, TTL, max odds |
 | `src/deltax/drop_detector.py` | History, tiers, dedup, recovery |
 | `src/deltax/monitor.py` | Main loop, alert persist, Telegram |
 | `src/deltax/markets.py` | wanted / pending / blacklisted |
-| `workers/deltax_monitor.nohup.log` | Production cycle and alert log |
+| `workers/deltax_monitor_tipsport.nohup.log` | Production cycle and alert log |
 | [alert-enrichment.md](alert-enrichment.md) | DB/Telegram field gaps (separate concern) |

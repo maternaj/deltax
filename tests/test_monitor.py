@@ -165,6 +165,38 @@ def test_excluded_event_name_case_sensitive() -> None:
     assert 78 in monitor.runtime.store.selections
 
 
+def test_quarter_handicap_skipped_on_ingest() -> None:
+    monitor = DeltaXMonitor(_config(), env={"DELTAX_TELEGRAM_GROUPS": ""})
+    tips_row = _selection_row(
+        opp_id=501,
+        my_selection_id="16-ASIAN_TOTAL-1",
+        event_name="Over/Under",
+        opp_name="Více než 2.25 (2.0, 2.5)",
+        odd=1.9,
+    )
+    pinn_row = _selection_row(
+        opp_id=502,
+        my_selection_id="29-0-SPREAD-AWAY",
+        event_name="Handicap",
+        opp_name="VPS 0-0.5",
+        opp_number="0-0.5",
+        odd=1.85,
+    )
+    half_row = _selection_row(
+        opp_id=503,
+        my_selection_id="29-0-SPREAD-AWAY",
+        event_name="Handicap",
+        opp_name="Away -0.5",
+        opp_number="-0.5",
+        odd=1.85,
+    )
+    assert monitor.ingest_rows([tips_row, pinn_row], now_ts=10.0) == 0
+    assert 501 not in monitor.runtime.store.selections
+    assert 502 not in monitor.runtime.store.selections
+    assert monitor.ingest_rows([half_row], now_ts=20.0) == 0
+    assert 503 in monitor.runtime.store.selections
+
+
 def test_load_config_uses_my_selection_id_lists() -> None:
     config = load_config(env={"DELTAX_CONFIG_PATH": str(Path("config.tipsport.yaml").resolve())})
     registry = config.market_registry

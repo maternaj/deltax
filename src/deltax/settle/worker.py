@@ -270,7 +270,6 @@ class DeltaXSettle:
 
             elapsed = time.monotonic() - started
             sleep_for = max(settle.sleep_seconds - elapsed, 1.0)
-            logger.debug("Settle sleeping %.0fs until next cycle", sleep_for)
             deadline = time.monotonic() + sleep_for
             while self.running:
                 remaining = deadline - time.monotonic()

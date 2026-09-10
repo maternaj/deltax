@@ -10,7 +10,7 @@ Standalone repo at **`~/deltax/`**. Shared **`.env`** (DB + Telegram) plus per-s
 
 Host monitoring: `~/vps-ops/status.sh --brief` (deltax group: 3 workers when Pinnacle configured).
 
-Telegram alerts tag the bookmaker: **`[TIPS]`** / **`[PINN]`** (one thread/group for both).
+Telegram alerts tag the bookmaker: **`[TIPS]`** / **`[PINN]`**. Routing is per-source via YAML (`config.tipsport.yaml` → group A, `config.pinnacle.yaml` → group B). Do not set `DELTAX_ALERT_GROUPS` in `.env` unless you want both feeds in the same group.
 
 ## Production start
 
@@ -45,7 +45,7 @@ Legacy wrappers (deprecated): `start_vps_worker.sh` → Tipsport monitor, `start
 
 ```bash
 .venv/bin/python workers/deltax_monitor_tipsport.py --once
-.venv/bin/python workers/deltax_monitor_pinnacle.py --once   # after config ready
+.venv/bin/python workers/deltax_monitor_pinnacle.py --once
 .venv/bin/python workers/deltax_settle_tipsport.py --once
 ```
 
