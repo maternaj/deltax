@@ -120,6 +120,35 @@ def _parse_odd(value: Any) -> float | None:
     return odd
 
 
+def _parse_line_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_signed_line(value: float) -> str:
+    rounded = round(value, 2)
+    if rounded == 0.0:
+        return "0"
+    if rounded > 0:
+        text = f"{rounded:.2f}".rstrip("0").rstrip(".")
+        return f"+{text}"
+    text = f"{rounded:.2f}".rstrip("0").rstrip(".")
+    return text
+
+
+def _spread_side_handicap(spread: dict[str, Any], side: str) -> str | None:
+    """Signed handicap for one spread side — never ``handicap_label`` (unsigned display)."""
+    key = "home_spread" if side == "HOME" else "away_spread"
+    line = _parse_line_number(spread.get(key))
+    if line is None:
+        return None
+    return _format_signed_line(line)
+
+
 def _line_open(line: dict[str, Any] | None) -> bool:
     if line is None:
         return False
@@ -180,6 +209,7 @@ def _append_row(
     match_url_style: str | None,
     sport_slug_overrides: dict[int, str] | None,
     betting_enabled: bool,
+    opp_number: str | None = None,
 ) -> None:
     event_id = int(event["event_id"])
     template = my_selection_id
@@ -201,7 +231,15 @@ def _append_row(
             odd=odd,
             betting_enabled=betting_enabled,
             opp_type=None,
-            opp_number=str(line.get("handicap_label") or line.get("points") or "") if line else None,
+            opp_number=(
+                opp_number
+                if opp_number is not None
+                else (
+                    str(line.get("handicap_label") or line.get("points") or "")
+                    if line
+                    else None
+                )
+            ),
             match_url=build_match_url(
                 match_url_base=match_url_base,
                 sport=sport,
@@ -283,13 +321,15 @@ def _flatten_period(
         if not _line_open(spread):
             continue
         line_id = _integer_line_id(spread.get("line_id"))
-        label = str(spread.get("handicap_label") or "")
         for side, key, name in (
             ("HOME", "home_odds", event.get("home")),
             ("AWAY", "away_odds", event.get("away")),
         ):
             odd = _parse_odd(spread.get(key))
             if odd is None:
+                continue
+            handicap = _spread_side_handicap(spread, side)
+            if handicap is None:
                 continue
             template = build_my_selection_id(sport_id, period_key, "SPREAD", side)
             _append_row(
@@ -299,7 +339,7 @@ def _flatten_period(
                 event=event,
                 period=period,
                 my_selection_id=template,
-                opp_name=f"{name} {label}".strip(),
+                opp_name=f"{name} {handicap}".strip(),
                 odd=odd,
                 line=spread,
                 line_id=line_id,
@@ -308,6 +348,7 @@ def _flatten_period(
                 match_url_style=match_url_style,
                 sport_slug_overrides=sport_slug_overrides,
                 betting_enabled=True,
+                opp_number=handicap,
             )
 
     totals = list(period.get("totals") or [])
