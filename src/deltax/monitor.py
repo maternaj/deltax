@@ -299,8 +299,9 @@ class DeltaXMonitor:
             logger.info("Tipsport endpoints=%s", list(self.config.tipsport_endpoints))
         elif self.config.pinnacle is not None:
             logger.info(
-                "Pinnacle sports=%s",
+                "Pinnacle sports=%s relative_units=%s",
                 [(s.sport_id, s.market_kinds) for s in self.config.pinnacle.sports],
+                list(self.config.pinnacle.relative_units),
             )
         while self.runtime.running:
             started = time.monotonic()

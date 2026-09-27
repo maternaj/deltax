@@ -47,11 +47,11 @@ Reference sport IDs: probe with `scripts/pinnacle_list_sports.py` (if added) or 
 
 ## Host monitoring (vps-ops)
 
-`~/vps-ops/status.sh` deltax group checks:
+`~/vps-ops/status.sh` deltax group checks (Sep 2026 scope):
 
-- `deltax_monitor_tipsport.py`
-- `deltax_monitor_pinnacle.py`
-- `deltax_settle_tipsport.py`
+- `deltax_monitor_pinnacle.py` only (**1/1**)
+
+Tipsport monitor + settler disabled by default. See `docs/deltax-production-sep2026.md`.
 
 ## Validation performed
 
@@ -62,6 +62,7 @@ Reference sport IDs: probe with `scripts/pinnacle_list_sports.py` (if added) or 
 | Tipsport production path | Unchanged behaviour |
 | Unit tests | 122 passing |
 | Production (2026-09-10) | 3/3 workers UP; ~8.5k Pinnacle selections/cycle |
+| Production (2026-09-27) | 1/1 Pinnacle UP; ~380 selections/cycle (corners+bookings `ru=` bulk) |
 
 ## Not in scope (QX-336 phase 1)
 

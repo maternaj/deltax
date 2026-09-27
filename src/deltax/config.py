@@ -178,6 +178,10 @@ def _parse_pinnacle_config(raw: dict[str, Any], env: dict[str, str]) -> Pinnacle
         raise ValueError("pinnacle.max_origin_age_seconds must be > 0")
 
     relative_units = _parse_str_tuple(pinnacle.get("relative_units"))
+    if not relative_units:
+        raise ValueError(
+            "pinnacle.relative_units must list at least one unit (e.g. Corners, Bookings)"
+        )
 
     return PinnacleConfig(
         origins=origins,

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from deltax.config import AppConfig, PinnacleConfig, PinnacleSportConfig
@@ -58,6 +60,68 @@ def _dedupe_rows_by_opp_id(rows: list[SelectionRow]) -> list[SelectionRow]:
     return list(by_opp.values())
 
 
+@dataclass
+class _RelativeFeedStats:
+    attempts: int = 0
+    failures: int = 0
+    rows: int = 0
+
+
+@dataclass
+class _PinnacleFetchStats:
+    total_requests: int = 0
+    failed_requests: int = 0
+    by_feed: dict[tuple[str, int], _RelativeFeedStats] = field(default_factory=dict)
+    by_unit: dict[str, _RelativeFeedStats] = field(default_factory=lambda: defaultdict(_RelativeFeedStats))
+
+    def record(
+        self,
+        *,
+        relative_unit: str,
+        market_kind: int,
+        ok: bool,
+        row_count: int,
+    ) -> None:
+        self.total_requests += 1
+        feed_key = (relative_unit, market_kind)
+        feed = self.by_feed.setdefault(feed_key, _RelativeFeedStats())
+        unit = self.by_unit[relative_unit]
+        feed.attempts += 1
+        unit.attempts += 1
+        feed.rows += row_count
+        unit.rows += row_count
+        if not ok:
+            self.failed_requests += 1
+            feed.failures += 1
+            unit.failures += 1
+
+    def fully_failed_units(self) -> list[str]:
+        return sorted(
+            unit
+            for unit, stats in self.by_unit.items()
+            if stats.attempts > 0 and stats.failures == stats.attempts
+        )
+
+    def log_summary(self) -> None:
+        for (relative_unit, market_kind), feed in sorted(self.by_feed.items()):
+            status = "OK" if feed.failures == 0 else "FAIL"
+            logger.info(
+                "Pinnacle feed ru=%s mk=%s status=%s rows=%d",
+                relative_unit,
+                market_kind,
+                status,
+                feed.rows,
+            )
+        for unit, stats in sorted(self.by_unit.items()):
+            logger.info(
+                "Pinnacle unit ru=%s attempts=%d failures=%d rows=%d",
+                unit,
+                stats.attempts,
+                stats.failures,
+                stats.rows,
+            )
+
+
 class PinnacleSource:
     def __init__(
         self,
@@ -100,75 +164,62 @@ class PinnacleSource:
 
     def fetch_selections(self) -> tuple[list[SelectionRow], bool]:
         rows: list[SelectionRow] = []
-        failed_requests = 0
-        total_requests = 0
+        stats = _PinnacleFetchStats()
         sport_slug_overrides = {
             sport.sport_id: sport.name for sport in self.pinnacle.sports if sport.name
         }
-        use_relative = bool(self.pinnacle.relative_units)
         for sport in self.pinnacle.sports:
             for market_kind in sport.market_kinds:
-                if use_relative:
-                    for relative_unit in self.pinnacle.relative_units:
-                        total_requests += 1
-                        body = self.client.fetch_relative_markets_bulk(
+                for relative_unit in self.pinnacle.relative_units:
+                    feed_rows: list[SelectionRow] = []
+                    fetch_ok = False
+                    body = self.client.fetch_relative_markets_bulk(
+                        sport.sport_id,
+                        market_kind,
+                        relative_unit,
+                    )
+                    if body is None:
+                        logger.error(
+                            "Pinnacle fetch failed sport_id=%s mk=%s ru=%s",
                             sport.sport_id,
                             market_kind,
                             relative_unit,
                         )
-                        if body is None:
-                            failed_requests += 1
-                            logger.error(
-                                "Pinnacle fetch failed sport_id=%s mk=%s ru=%s",
-                                sport.sport_id,
-                                market_kind,
-                                relative_unit,
-                            )
-                            continue
+                    else:
                         try:
-                            rows.extend(
-                                self._flatten_sport_feed(
-                                    body,
-                                    sport=sport,
-                                    sport_slug_overrides=sport_slug_overrides,
-                                )
+                            feed_rows = self._flatten_sport_feed(
+                                body,
+                                sport=sport,
+                                sport_slug_overrides=sport_slug_overrides,
                             )
+                            fetch_ok = True
+                            rows.extend(feed_rows)
                         except Exception:
-                            failed_requests += 1
                             logger.exception(
                                 "Pinnacle parse failed sport_id=%s mk=%s ru=%s",
                                 sport.sport_id,
                                 market_kind,
                                 relative_unit,
                             )
-                    continue
+                    stats.record(
+                        relative_unit=relative_unit,
+                        market_kind=market_kind,
+                        ok=fetch_ok,
+                        row_count=len(feed_rows),
+                    )
 
-                total_requests += 1
-                body = self.client.fetch_events(sport.sport_id, market_kind)
-                if body is None:
-                    failed_requests += 1
-                    logger.error(
-                        "Pinnacle fetch failed sport_id=%s mk=%s",
-                        sport.sport_id,
-                        market_kind,
-                    )
-                    continue
-                try:
-                    rows.extend(
-                        self._flatten_sport_feed(
-                            body,
-                            sport=sport,
-                            sport_slug_overrides=sport_slug_overrides,
-                        )
-                    )
-                except Exception:
-                    failed_requests += 1
-                    logger.exception(
-                        "Pinnacle parse failed sport_id=%s mk=%s",
-                        sport.sport_id,
-                        market_kind,
-                    )
-        ok = total_requests == 0 or failed_requests < total_requests
+        stats.log_summary()
+        failed_units = stats.fully_failed_units()
+        if failed_units:
+            logger.error(
+                "Pinnacle relative_units fully failed (all mk buckets): %s",
+                ", ".join(failed_units),
+            )
+        ok = (
+            stats.total_requests > 0
+            and not failed_units
+            and stats.failed_requests < stats.total_requests
+        )
         return _dedupe_rows_by_opp_id(rows), ok
 
     def close(self) -> None:
