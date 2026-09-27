@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from deltax.config import AppConfig, PinnacleConfig
+from deltax.config import AppConfig, PinnacleConfig, PinnacleSportConfig
 from deltax.parser import SelectionRow, parse_selections
 from deltax.pinnacle.client import PinnacleClient
 from deltax.pinnacle.flatten import flatten_selections
@@ -50,6 +50,14 @@ class TipsportSource:
         self.client.close()
 
 
+def _dedupe_rows_by_opp_id(rows: list[SelectionRow]) -> list[SelectionRow]:
+    """Later rows win — used when mk=1 overlays mk=0 in the same cycle."""
+    by_opp: dict[int, SelectionRow] = {}
+    for row in rows:
+        by_opp[row.opp_id] = row
+    return list(by_opp.values())
+
+
 class PinnacleSource:
     def __init__(
         self,
@@ -66,6 +74,30 @@ class PinnacleSource:
             max_origin_age_seconds=pinnacle.max_origin_age_seconds,
         )
 
+    def _flatten_sport_feed(
+        self,
+        body: dict,
+        *,
+        sport: PinnacleSportConfig,
+        sport_slug_overrides: dict[int, str],
+    ) -> list[SelectionRow]:
+        sports = normalize_sport_feed(body)
+        selected = sport_by_id(sports, sport.sport_id)
+        if selected is None:
+            raise ValueError(f"Pinnacle response missing sport_id={sport.sport_id}")
+        return flatten_selections(
+            [selected],
+            prematch_only=self.pinnacle.prematch_only,
+            main_lines_only=self.pinnacle.main_lines_only,
+            period_keys=self.pinnacle.period_keys,
+            league_allowlist=sport.league_allowlist or self.pinnacle.league_allowlist,
+            league_blocklist=sport.league_blocklist or self.pinnacle.league_blocklist,
+            league_allow_name_substrings=sport.league_allow_name_substrings,
+            league_block_name_substrings=sport.league_block_name_substrings,
+            match_url_base=self.config.match_url_base,
+            sport_slug_overrides=sport_slug_overrides or None,
+        )
+
     def fetch_selections(self) -> tuple[list[SelectionRow], bool]:
         rows: list[SelectionRow] = []
         failed_requests = 0
@@ -73,8 +105,44 @@ class PinnacleSource:
         sport_slug_overrides = {
             sport.sport_id: sport.name for sport in self.pinnacle.sports if sport.name
         }
+        use_relative = bool(self.pinnacle.relative_units)
         for sport in self.pinnacle.sports:
             for market_kind in sport.market_kinds:
+                if use_relative:
+                    for relative_unit in self.pinnacle.relative_units:
+                        total_requests += 1
+                        body = self.client.fetch_relative_markets_bulk(
+                            sport.sport_id,
+                            market_kind,
+                            relative_unit,
+                        )
+                        if body is None:
+                            failed_requests += 1
+                            logger.error(
+                                "Pinnacle fetch failed sport_id=%s mk=%s ru=%s",
+                                sport.sport_id,
+                                market_kind,
+                                relative_unit,
+                            )
+                            continue
+                        try:
+                            rows.extend(
+                                self._flatten_sport_feed(
+                                    body,
+                                    sport=sport,
+                                    sport_slug_overrides=sport_slug_overrides,
+                                )
+                            )
+                        except Exception:
+                            failed_requests += 1
+                            logger.exception(
+                                "Pinnacle parse failed sport_id=%s mk=%s ru=%s",
+                                sport.sport_id,
+                                market_kind,
+                                relative_unit,
+                            )
+                    continue
+
                 total_requests += 1
                 body = self.client.fetch_events(sport.sport_id, market_kind)
                 if body is None:
@@ -86,7 +154,13 @@ class PinnacleSource:
                     )
                     continue
                 try:
-                    sports = normalize_sport_feed(body)
+                    rows.extend(
+                        self._flatten_sport_feed(
+                            body,
+                            sport=sport,
+                            sport_slug_overrides=sport_slug_overrides,
+                        )
+                    )
                 except Exception:
                     failed_requests += 1
                     logger.exception(
@@ -94,32 +168,8 @@ class PinnacleSource:
                         sport.sport_id,
                         market_kind,
                     )
-                    continue
-                selected = sport_by_id(sports, sport.sport_id)
-                if selected is None:
-                    failed_requests += 1
-                    logger.error(
-                        "Pinnacle response missing sport_id=%s mk=%s",
-                        sport.sport_id,
-                        market_kind,
-                    )
-                    continue
-                rows.extend(
-                    flatten_selections(
-                        [selected],
-                        prematch_only=self.pinnacle.prematch_only,
-                        main_lines_only=self.pinnacle.main_lines_only,
-                        period_keys=self.pinnacle.period_keys,
-                        league_allowlist=sport.league_allowlist or self.pinnacle.league_allowlist,
-                        league_blocklist=sport.league_blocklist or self.pinnacle.league_blocklist,
-                        league_allow_name_substrings=sport.league_allow_name_substrings,
-                        league_block_name_substrings=sport.league_block_name_substrings,
-                        match_url_base=self.config.match_url_base,
-                        sport_slug_overrides=sport_slug_overrides or None,
-                    )
-                )
         ok = total_requests == 0 or failed_requests < total_requests
-        return rows, ok
+        return _dedupe_rows_by_opp_id(rows), ok
 
     def close(self) -> None:
         self.client.close()

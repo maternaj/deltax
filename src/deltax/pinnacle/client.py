@@ -34,6 +34,49 @@ def build_sports_url(token: str, *, origin: str = PA_ORIGIN) -> str:
     return f"{_api_root(origin)}/sports-markets?{query}"
 
 
+def build_relative_markets_bulk_url(
+    sport_id: int,
+    token: str,
+    relative_unit: str,
+    *,
+    market_kind: int = 0,
+    origin: str = PA_ORIGIN,
+) -> str:
+    """Web-style bulk relative-unit feed (e.g. ``ru=Corners``, ``ru=Bookings``)."""
+    if market_kind not in {0, 1, 2, 3}:
+        raise ValueError("market_kind must be 0, 1, 2, or 3")
+    unit = str(relative_unit or "").strip()
+    if not unit:
+        raise ValueError("relative_unit must be non-empty")
+    query: list[tuple[str, str]] = [
+        ("btg", "1"),
+        ("cl", "3"),
+        ("d", ""),
+        ("hle", "false"),
+        ("ic", "false"),
+        ("ice", "false"),
+        ("inl", "false"),
+        ("l", "3"),
+        ("lv", "0"),
+        ("me", "0"),
+        ("me01", ""),
+        ("mk", str(market_kind)),
+        ("more", "false"),
+        ("o", "1"),
+        ("ot", "1"),
+        ("pa", "0"),
+        ("pimo", "0,1,8,39,2,3,6,7,4,5"),
+        ("pn", "-1"),
+        ("pv", "1"),
+        ("ru", unit),
+        ("sp", str(sport_id)),
+        ("tm", "0"),
+        ("v", "0"),
+        ("_", token),
+    ]
+    return f"{_api_root(origin)}/events?{urlencode(query)}"
+
+
 def build_events_url(
     sport_id: int,
     token: str,
@@ -157,6 +200,20 @@ class PinnacleClient:
             purpose=f"market bucket {market_kind} odds for sport {sport_id}",
         )
 
+    def fetch_relative_markets_bulk(
+        self,
+        sport_id: int,
+        market_kind: int,
+        relative_unit: str,
+    ) -> dict[str, Any] | None:
+        unit = str(relative_unit or "").strip()
+        return self._fetch_events_body(
+            sport_id,
+            market_kind,
+            purpose=f"ru={unit} bulk mk={market_kind} for sport {sport_id}",
+            relative_unit=unit,
+        )
+
     def fetch_event_detail(
         self,
         sport_id: int,
@@ -178,16 +235,27 @@ class PinnacleClient:
         *,
         purpose: str,
         event_id: int | None = None,
+        relative_unit: str | None = None,
     ) -> dict[str, Any] | None:
         try:
             capture = self._origins.fetch(
                 self.session,
-                lambda origin, token: build_events_url(
-                    sport_id,
-                    token,
-                    market_kind=market_kind,
-                    event_id=event_id,
-                    origin=origin,
+                lambda origin, token: (
+                    build_relative_markets_bulk_url(
+                        sport_id,
+                        token,
+                        str(relative_unit),
+                        market_kind=market_kind,
+                        origin=origin,
+                    )
+                    if relative_unit
+                    else build_events_url(
+                        sport_id,
+                        token,
+                        market_kind=market_kind,
+                        event_id=event_id,
+                        origin=origin,
+                    )
                 ),
                 purpose=purpose,
                 token_factory=self._tokens,

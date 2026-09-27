@@ -7,6 +7,9 @@ pinnacle:
     - "0"
   fresh_attempts: 3
   max_origin_age_seconds: 5.0
+  relative_units:
+    - Corners
+    - Bookings
   sports:
     - sport_id: 29
       name: soccer
@@ -33,17 +36,17 @@ drop_tiers:
 
 telegram:
   match_url_base: https://www.ps3838.com/en
-  default_alert_groups: A
+  default_alert_groups: B
 
 markets:
   wanted:
-    - 29-0-MONEYLINE-HOME
-    - 29-0-MONEYLINE-AWAY
-    - 29-0-MONEYLINE-DRAW
     - 29-0-SPREAD-HOME
     - 29-0-SPREAD-AWAY
     - 29-0-TOTAL-OVER
     - 29-0-TOTAL-UNDER
+    - 29-0-MONEYLINE-HOME
+    - 29-0-MONEYLINE-AWAY
+    - 29-0-MONEYLINE-DRAW
   pending: []
   blacklisted: []
   blacklisted_prefixes: []

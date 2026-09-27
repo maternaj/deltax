@@ -48,6 +48,7 @@ class PinnacleSportConfig:
 class PinnacleConfig:
     origins: tuple[str, ...]
     sports: tuple[PinnacleSportConfig, ...]
+    relative_units: tuple[str, ...]
     prematch_only: bool
     main_lines_only: bool
     period_keys: tuple[str, ...]
@@ -176,9 +177,12 @@ def _parse_pinnacle_config(raw: dict[str, Any], env: dict[str, str]) -> Pinnacle
     if max_origin_age_seconds <= 0:
         raise ValueError("pinnacle.max_origin_age_seconds must be > 0")
 
+    relative_units = _parse_str_tuple(pinnacle.get("relative_units"))
+
     return PinnacleConfig(
         origins=origins,
         sports=tuple(sports_cfg),
+        relative_units=relative_units,
         prematch_only=bool(pinnacle.get("prematch_only", True)),
         main_lines_only=bool(pinnacle.get("main_lines_only", True)),
         period_keys=_parse_str_tuple(pinnacle.get("period_keys") or ["0"]) or ("0",),

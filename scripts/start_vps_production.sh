@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# DeltaX VPS production — Tipsport monitor + Pinnacle monitor (when configured) + Tipsport settler.
+# DeltaX VPS production — Pinnacle monitor (soccer corners/bookings) + optional Tipsport stack.
 #
 # Usage:
 #   ./scripts/start_vps_production.sh {start|stop|restart|status}
+#
+# Tipsport monitor + settler are OFF by default (Sep 2026). Set DELTAX_TIPSPORT_ENABLED=1 to restore.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 log() { printf '%s\n' "$*"; }
+
+tipsport_enabled() {
+  [[ "${DELTAX_TIPSPORT_ENABLED:-0}" == "1" ]]
+}
 
 any_running() {
   for script in \
@@ -56,25 +62,34 @@ cmd_start() {
     cmd_stop
   fi
   log "=== Starting deltax production ==="
-  "$ROOT/scripts/start_vps_monitor_tipsport.sh" start
+  if tipsport_enabled; then
+    "$ROOT/scripts/start_vps_monitor_tipsport.sh" start
+    "$ROOT/scripts/start_vps_settle_tipsport.sh" start
+  else
+    log "Tipsport monitor + settler skipped (DELTAX_TIPSPORT_ENABLED=1 to enable)"
+  fi
   if pinnacle_enabled; then
     "$ROOT/scripts/start_vps_monitor_pinnacle.sh" start
   else
     log "Pinnacle monitor skipped (configure pinnacle.sports in config.pinnacle.yaml or set DELTAX_PINNACLE_ENABLED=0 to silence)"
   fi
-  "$ROOT/scripts/start_vps_settle_tipsport.sh" start
   cmd_status
 }
 
 cmd_status() {
   log "deltax production (repo: $ROOT)"
-  "$ROOT/scripts/start_vps_monitor_tipsport.sh" status
+  if tipsport_enabled; then
+    "$ROOT/scripts/start_vps_monitor_tipsport.sh" status
+    "$ROOT/scripts/start_vps_settle_tipsport.sh" status
+  else
+    log "deltax_monitor_tipsport skipped (disabled)"
+    log "deltax_settle_tipsport skipped (disabled)"
+  fi
   if pinnacle_enabled; then
     "$ROOT/scripts/start_vps_monitor_pinnacle.sh" status
   else
     log "deltax_monitor_pinnacle skipped (config not ready)"
   fi
-  "$ROOT/scripts/start_vps_settle_tipsport.sh" status
 }
 
 cmd_restart() { cmd_stop; cmd_start; }

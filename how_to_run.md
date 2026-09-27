@@ -2,13 +2,15 @@
 
 Standalone repo at **`~/deltax/`**. Shared **`.env`** (DB + Telegram) plus per-source YAML configs.
 
-| Worker | Script | Config |
-|--------|--------|--------|
-| Tipsport monitor | `workers/deltax_monitor_tipsport.py` | `config.tipsport.yaml` |
-| Pinnacle monitor | `workers/deltax_monitor_pinnacle.py` | `config.pinnacle.yaml` |
-| Tipsport settler | `workers/deltax_settle_tipsport.py` | `config.tipsport.yaml` |
+| Worker | Script | Config | Production (Sep 2026) |
+|--------|--------|--------|------------------------|
+| Pinnacle monitor | `workers/deltax_monitor_pinnacle.py` | `config.pinnacle.yaml` | **ON** — soccer corners + bookings |
+| Tipsport monitor | `workers/deltax_monitor_tipsport.py` | `config.tipsport.yaml` | **OFF** (set `DELTAX_TIPSPORT_ENABLED=1`) |
+| Tipsport settler | `workers/deltax_settle_tipsport.py` | `config.tipsport.yaml` | **OFF** (with Tipsport) |
 
-Host monitoring: `~/vps-ops/status.sh --brief` (deltax group: 3 workers when Pinnacle configured).
+Host monitoring: `~/vps-ops/status.sh --brief` (deltax group: **1/1** Pinnacle monitor).
+
+Pinnacle uses fast bulk feeds: `ru=Corners` and `ru=Bookings` (same pattern as MoreX), soccer sport 29 only, `mk=0` + `mk=1`.
 
 Telegram alerts tag the bookmaker: **`[TIPS]`** / **`[PINN]`**. Routing is per-source via YAML (`config.tipsport.yaml` → group A, `config.pinnacle.yaml` → group B). Do not set `DELTAX_ALERT_GROUPS` in `.env` unless you want both feeds in the same group.
 
@@ -21,7 +23,7 @@ cp .env.example .env   # first time — edit DB + Telegram
 ./scripts/start_vps_production.sh start    # or stop | restart | status
 ```
 
-Starts **Tipsport monitor**, **Tipsport settler**, and **Pinnacle monitor** when `config.pinnacle.yaml` has `pinnacle.sports` configured (see below).
+Starts **Pinnacle monitor** when `config.pinnacle.yaml` is ready. Tipsport monitor + settler are **skipped** unless `DELTAX_TIPSPORT_ENABLED=1`.
 
 ### Pinnacle (QX-336) — configure before first production run
 

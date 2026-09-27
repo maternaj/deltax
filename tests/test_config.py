@@ -96,6 +96,7 @@ def test_load_pinnacle_config(tmp_path: Path) -> None:
             {
                 "source": "pinnacle",
                 "pinnacle": {
+                    "relative_units": ["Corners", "Bookings"],
                     "sports": [{"sport_id": 29, "market_kinds": [0, 1]}],
                     "prematch_only": True,
                 },
@@ -115,4 +116,5 @@ def test_load_pinnacle_config(tmp_path: Path) -> None:
     assert config.pinnacle is not None
     assert config.pinnacle.sports[0].sport_id == 29
     assert config.pinnacle.sports[0].market_kinds == (0, 1)
+    assert config.pinnacle.relative_units == ("Corners", "Bookings")
     assert config.tipsport_endpoints == ()
