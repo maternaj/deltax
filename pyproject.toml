@@ -16,6 +16,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
+    "rapidfuzz>=3.0.0",
     "user-agents>=2.2.0",
 ]
 
@@ -23,6 +24,7 @@ dependencies = [
 deltax-monitor-tipsport = "deltax.monitor:main"
 deltax-monitor-pinnacle = "deltax.monitor:main"
 deltax-settle-tipsport = "deltax.settle.worker:main"
+deltax-settle-pinnacle = "deltax.settle.pinnacle.worker:main"
 # Deprecated console script names (Tipsport monitor / settler)
 deltax-monitor = "deltax.monitor:main"
 deltax-settle = "deltax.settle.worker:main"

@@ -1,0 +1,22 @@
+# Flashscore match-linking for Pinnacle corner settlement.
+# Copied from morex/config/inspire.yaml (matching + team_aliases).
+
+matching:
+  min_match_score: 75
+  min_second_best_gap: 10
+  # After applying kickoff delta, fixtures must agree within this window.
+  kickoff_window_minutes: 180
+  time_penalty_per_minute: 0.05
+  # Widen FS candidate query around alert kickoffs (hours).
+  load_window_hours: 3
+
+# Bootstrap aliases (optional). Approved rows from morex_team_alias_candidates
+# are merged at runtime (DB wins on key collision).
+team_aliases:
+  athletico pr: atletico pr
+  atletico nacional: atl nacional
+  botafogo rj: botafogo fr
+  junior de barranquilla: junior
+  psg: paris sg
+  oh leuven: leuven
+  atlas guadalajara: atlas

@@ -95,7 +95,8 @@ INSERT INTO deltax_alerts (
     tier_window_seconds, tier_drop_pct, tier_implied_drop_pct,
     baseline_observed_at, current_observed_at,
     tipsport_snapshot,
-    message, telegram_ok, telegram_groups
+    message, telegram_ok, telegram_groups,
+    source
 ) VALUES (
     %(opp_id)s, %(event_id)s, %(match_id)s, %(my_selection_id)s,
     %(match_name)s, %(home_participant)s, %(visiting_participant)s,
@@ -107,7 +108,8 @@ INSERT INTO deltax_alerts (
     %(tier_window_seconds)s, %(tier_drop_pct)s, %(tier_implied_drop_pct)s,
     %(baseline_observed_at)s, %(current_observed_at)s,
     %(tipsport_snapshot)s,
-    %(message)s, %(telegram_ok)s, %(telegram_groups)s
+    %(message)s, %(telegram_ok)s, %(telegram_groups)s,
+    %(source)s
 )
 RETURNING alert_id
 """

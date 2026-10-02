@@ -225,6 +225,7 @@ class DeltaXMonitor:
             "message": message,
             "telegram_ok": False,
             "telegram_groups": "",
+            "source": self.config.source,
         }
         try:
             with connect(self.env) as conn:

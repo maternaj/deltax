@@ -9,6 +9,7 @@ RESULT_UNKNOWN = "?"
 RESULT_EXPIRED = "E"
 
 SOURCE_TIPSPORT_RESULTS = "tipsport_results"
+SOURCE_FLASHSCORE_STATS = "flashscore_stats"
 SOURCE_ASIAN_QUARTER = "asian_quarter"
 SOURCE_VOID_RULE = "void_rule"
 SOURCE_EXPIRED_WINDOW = "expired_window"

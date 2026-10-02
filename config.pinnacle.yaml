@@ -57,7 +57,8 @@ markets:
 settle:
   sleep_seconds: 900
   default_delay_hours: 6
+  # max_age_days ignored by Pinnacle settler — fs_* has long history; no expiry window.
   max_age_days: 3
-  batch_match_limit: 50
-  match_request_delay_seconds: 5
+  batch_match_limit: 200
+  match_request_delay_seconds: 0
   market_delay_hours: {}

@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 import psycopg
 
 from deltax.db import DatabaseError, connect
+from deltax.settle.pinnacle.fs_match import LinkedFsMatch
 
 SQL_EXPIRE_OLD_ALERTS = """
 UPDATE deltax_alerts
@@ -40,6 +41,43 @@ WHERE result_flag = false
 ORDER BY kickoff_at ASC, alert_id ASC
 """
 
+SQL_SELECT_PENDING_PINNACLE_CORNER_ALERTS = """
+SELECT
+    alert_id,
+    opp_id,
+    event_id,
+    match_id,
+    my_selection_id,
+    opp_name,
+    opp_number,
+    kickoff_at,
+    home_participant,
+    visiting_participant,
+    match_name
+FROM deltax_alerts
+WHERE result_flag = false
+  AND kickoff_at IS NOT NULL
+  AND (
+    source = 'pinnacle'
+    OR (
+      source IS NULL
+      AND my_selection_id LIKE '29-0-%%'
+      AND message LIKE '[PINN]%%'
+    )
+  )
+  AND (
+    home_participant ILIKE '%%(Corners)%%'
+    OR visiting_participant ILIKE '%%(Corners)%%'
+    OR match_name ILIKE '%%(Corners)%%'
+  )
+  AND NOT (
+    home_participant ILIKE '%%(Bookings)%%'
+    OR visiting_participant ILIKE '%%(Bookings)%%'
+    OR match_name ILIKE '%%(Bookings)%%'
+  )
+ORDER BY kickoff_at ASC, alert_id ASC
+"""
+
 SQL_UPDATE_SETTLEMENT = """
 UPDATE deltax_alerts
 SET odds_at_off = %(odds_at_off)s,
@@ -63,6 +101,26 @@ class PendingAlert:
     my_selection_id: str
     opp_name: str
     kickoff_at: datetime
+
+
+@dataclass(frozen=True)
+class PinnacleCornerPendingAlert:
+    alert_id: int
+    opp_id: int
+    event_id: int
+    match_id: int
+    my_selection_id: str
+    opp_name: str
+    opp_number: str | None
+    kickoff_at: datetime
+    home_participant: str
+    visiting_participant: str
+    match_name: str
+
+
+@dataclass(frozen=True)
+class PinnaclePendingAlert(PinnacleCornerPendingAlert):
+    fs_match: LinkedFsMatch
 
 
 def validate_settler_connection(env: dict[str, str]) -> None:
@@ -122,6 +180,35 @@ def expire_old_alerts(
         )
         rows = cur.fetchall()
     return [int(row[0]) for row in rows]
+
+
+def fetch_pending_pinnacle_corner_alerts(
+    conn: psycopg.Connection,
+) -> list[PinnacleCornerPendingAlert]:
+    with conn.cursor() as cur:
+        cur.execute(SQL_SELECT_PENDING_PINNACLE_CORNER_ALERTS)
+        rows = cur.fetchall()
+    alerts: list[PinnacleCornerPendingAlert] = []
+    for row in rows:
+        kickoff_at = row[7]
+        if kickoff_at.tzinfo is None:
+            kickoff_at = kickoff_at.replace(tzinfo=timezone.utc)
+        alerts.append(
+            PinnacleCornerPendingAlert(
+                alert_id=int(row[0]),
+                opp_id=int(row[1]),
+                event_id=int(row[2]),
+                match_id=int(row[3]),
+                my_selection_id=str(row[4]),
+                opp_name=str(row[5] or ""),
+                opp_number=str(row[6]) if row[6] is not None else None,
+                kickoff_at=kickoff_at,
+                home_participant=str(row[8] or ""),
+                visiting_participant=str(row[9] or ""),
+                match_name=str(row[10] or ""),
+            )
+        )
+    return alerts
 
 
 def fetch_pending_alerts(conn: psycopg.Connection, *, min_kickoff: datetime) -> list[PendingAlert]:

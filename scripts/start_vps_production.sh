@@ -20,7 +20,8 @@ any_running() {
   for script in \
     start_vps_monitor_tipsport.sh \
     start_vps_monitor_pinnacle.sh \
-    start_vps_settle_tipsport.sh; do
+    start_vps_settle_tipsport.sh \
+    start_vps_settle_pinnacle.sh; do
     if "$ROOT/scripts/$script" status 2>/dev/null | grep -qE ' running pid '; then
       return 0
     fi
@@ -52,6 +53,7 @@ cmd_stop() {
   log "Stopping deltax production..."
   kill_legacy_workers
   "$ROOT/scripts/start_vps_settle_tipsport.sh" stop || true
+  "$ROOT/scripts/start_vps_settle_pinnacle.sh" stop || true
   "$ROOT/scripts/start_vps_monitor_pinnacle.sh" stop || true
   "$ROOT/scripts/start_vps_monitor_tipsport.sh" stop || true
 }
@@ -70,6 +72,7 @@ cmd_start() {
   fi
   if pinnacle_enabled; then
     "$ROOT/scripts/start_vps_monitor_pinnacle.sh" start
+    "$ROOT/scripts/start_vps_settle_pinnacle.sh" start
   else
     log "Pinnacle monitor skipped (configure pinnacle.sports in config.pinnacle.yaml or set DELTAX_PINNACLE_ENABLED=0 to silence)"
   fi
@@ -87,6 +90,7 @@ cmd_status() {
   fi
   if pinnacle_enabled; then
     "$ROOT/scripts/start_vps_monitor_pinnacle.sh" status
+    "$ROOT/scripts/start_vps_settle_pinnacle.sh" status
   else
     log "deltax_monitor_pinnacle skipped (config not ready)"
   fi
